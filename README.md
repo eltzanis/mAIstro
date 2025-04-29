@@ -1,5 +1,5 @@
 
-# 🎼 mAIstro
+# 🧠🤖 mAIstro
 > An open-source multi-agentic system for automated end-to-end development of radiomics and deep learning models for medical imaging
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)  
