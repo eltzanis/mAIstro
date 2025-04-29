@@ -32,7 +32,7 @@ Built around a team of specialized agents, mAIstro enables researchers and clini
 
 1. **Clone the repository**:
 ```bash
-git clone https://github.com/yourusername/mAIstro.git
+git clone https://github.com/eltzanis/mAIstro.git
 cd mAIstro
 ```
 
