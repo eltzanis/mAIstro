@@ -36,11 +36,10 @@ git clone https://github.com/yourusername/mAIstro.git
 cd mAIstro
 ```
 
-2. **(Recommended) Create and activate a virtual environment**:
+2. **Create and activate a virtual environment**:
 ```bash
-python -m venv maistro-env
-source maistro-env/bin/activate          # On Linux/macOS
-.\maistro-env\Scriptsctivate            # On Windows
+conda create -n maistro-env python=3.11
+conda activate maistro-env
 ```
 
 3. **Install required Python packages**:
