@@ -1,5 +1,7 @@
+<p align="center">
+  <img src="mAIstro_logo.png" alt="mAIstro Logo" width="300"/>
+</p>
 
-# mAIstro 🤖	
 > An open-source multi-agentic system for automated end-to-end development of radiomics and deep learning models for medical imaging
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)  
