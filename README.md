@@ -99,3 +99,18 @@ This project is licensed under the **MIT License** — see the LICENSE file for 
 - 📊 [`PyCaret`](https://github.com/pycaret/pycaret) for tabular data modeling
 
 ---
+
+### 📚 Cite this work
+
+If you use **mAIstro** in your research, please cite:
+
+> Tzanis, E., & Klontzas, M. E. (2025). *mAIstro: an open-source multi-agentic system for automated end-to-end development of radiomics and deep learning models for medical imaging*. [Manuscript in preparation].
+
+**Developers**:  
+Dr. Eleftherios Tzanis  
+Prof. Michail E. Klontzas  
+Artificial Intelligence and Translational Imaging (ATI) Lab  
+Department of Radiology, School of Medicine, University of Crete, Heraklion, Greece
+
+---
+
