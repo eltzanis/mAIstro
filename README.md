@@ -15,6 +15,8 @@ Built around a team of specialized agents, mAIstro enables researchers and clini
 
 🌐 **LLM-Agnostic Design**: mAIstro can operate with both open-source and commercial LLMs (e.g., GPT-4, Claude, DeepSeek, LLaMA, Qwen), providing flexibility across environments.
 
+Built on top of 🤗 Hugging Face's [smolagents](https://github.com/huggingface/smolagents) framework.
+
 ---
 
 ## ✨  Key Features
