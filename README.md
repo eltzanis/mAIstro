@@ -32,35 +32,21 @@ Built on top of 🤗 Hugging Face's [smolagents](https://github.com/huggingface/
 
 ---
 
-## ⚙️ Installation and Environment Setup
+## 🔧 Dependencies
 
-1. **Clone the repository**:
-```bash
-git clone https://github.com/eltzanis/mAIstro.git
-cd mAIstro
-```
+The framework relies on the following core Python packages:
 
-2. **Create and activate a virtual environment**:
-```bash
-conda create -n maistro-env python=3.11
-conda activate maistro-env
-```
+- `torch` (PyTorch)
+- `nnunetv2`
+- `totalsegmentator`
+- `smolagents`
+- `pycaret`
+- `pyradiomics`
 
-3. **Install required Python packages**:
-```bash
-pip install -r requirements.txt
-```
+Users should ensure these libraries are installed and properly configured before using the system. 
 
-4. **Set up nnU-Net environment variables**:  
-   To enable the nnU-Net Agent, you must configure the paths following the [nnU-Net setup instructions](https://github.com/MIC-DKFZ/nnUNet/blob/master/documentation/setting_up_paths.md).
-
-Example setup:
-```bash
-export nnUNet_raw_data_base="/path/to/nnUNet_raw_data_base"
-export nnUNet_preprocessed="/path/to/nnUNet_preprocessed"
-export RESULTS_FOLDER="/path/to/nnUNet_trained_models"
-```
-(For Windows users, use `set` instead of `export`.)
+For nnU-Net setup and environment configuration, please follow the official instructions:  
+🔗 [nnU-Net Setup Guide](https://github.com/MIC-DKFZ/nnUNet/blob/master/documentation/installation_instructions.md)
 
 ---
 
