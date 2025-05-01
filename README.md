@@ -13,20 +13,20 @@
 **mAIstro** is a fully autonomous, open-source multi-agentic system designed to orchestrate the full pipeline of medical imaging AI development — from **exploratory data analysis (EDA)** and **radiomics feature extraction** to **training and deploying deep learning models**.  
 Built around a team of specialized agents, mAIstro enables researchers and clinicians to interact with complex AI workflows **using natural language prompts** — no coding required.
 
-✅ **LLM-Agnostic Design**: mAIstro can operate with both open-source and commercial LLMs (e.g., GPT-4, Claude, DeepSeek, LLaMA, Qwen), providing flexibility across environments.
+🌐 **LLM-Agnostic Design**: mAIstro can operate with both open-source and commercial LLMs (e.g., GPT-4, Claude, DeepSeek, LLaMA, Qwen), providing flexibility across environments.
 
 ---
 
-## 🧩 Key Features
+## ✨  Key Features
 - 🔎 Autonomous **Exploratory Data Analysis (EDA)**
-- 🧠 **Radiomics feature extraction** (for CT, MRI, and multi-parametric imaging)
-- 🏥 **nnU-Net Agent** for medical image segmentation
-- 🏥 **TotalSegmentator Agent** for full-body and organ-specific segmentation
+- 🧬 **Radiomics feature extraction** (for CT, MRI, and multi-parametric imaging)
+- ⚙️ **nnU-Net Agent** for segmentation model development and implementation
+- ⚙️ **TotalSegmentator Agent** for full-body and organ-specific automatic segmentation
 - 🖼️ **Image Classification Agent** (ResNet, VGG16, InceptionV3 architectures)
 - 📊 **Feature Importance and Feature Selection**
 - 📈 **Tabular data Classification and Regression Agents**
-- 🔗 Modular tool-based architecture for extensibility
-- 📝 Integrated in a single user-friendly Jupyter Notebook
+- 🛠️ Modular tool-based architecture for extensibility
+- 🧾 Integrated in a single user-friendly Jupyter Notebook
 
 ---
 
