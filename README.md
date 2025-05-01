@@ -4,7 +4,7 @@
 
 > An open-source multi-agentic system for automated end-to-end development of radiomics and deep learning models for medical imaging
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)  
+![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)  
 
 ---
@@ -86,7 +86,8 @@ Please feel free to fork the repository and submit pull requests. For major chan
 
 ## 📄 License
 
-This project is licensed under the **MIT License** — see the LICENSE file for details.
+This project is licensed under the **Apache License 2.0**.  
+You are free to use, modify, and distribute this software under the terms of the license.
 
 ---
 
