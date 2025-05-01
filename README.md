@@ -94,8 +94,8 @@ You are free to use, modify, and distribute this software under the terms of the
 ## 🧡 Acknowledgments
 
 - 🤖 Huggingface [`smolagents`](https://github.com/huggingface/smolagents) for lightweight agentic abstractions
-- 🏥 [`nnU-Net`](https://github.com/MIC-DKFZ/nnUNet) for segmentation pipelines
-- 🏥 [`TotalSegmentator`](https://github.com/wasserth/TotalSegmentator) for multi-organ segmentation
+- ⚙️ [`nnU-Net`](https://github.com/MIC-DKFZ/nnUNet) for segmentation pipelines
+- ⚙️ [`TotalSegmentator`](https://github.com/wasserth/TotalSegmentator) for multi-organ segmentation
 - 🧬 [`PyRadiomics`](https://github.com/Radiomics/pyradiomics) for radiomics feature extraction
 - 📊 [`PyCaret`](https://github.com/pycaret/pycaret) for tabular data modeling
 
