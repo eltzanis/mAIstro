@@ -93,7 +93,7 @@ You are free to use, modify, and distribute this software under the terms of the
 
 If you use **mAIstro** in your research, please cite:
 
-> Tzanis, E., & Klontzas, M. E. (2025). *mAIstro: an open-source multi-agentic system for automated end-to-end development of radiomics and deep learning models for medical imaging*. [Manuscript submitted for publication].
+> Tzanis, E., & Klontzas, M. E. (2025). *mAIstro: an open-source multi-agentic system for automated end-to-end development of radiomics and deep learning models for medical imaging*. [Paper under publication].
 
 **Developers**:  
 Dr. Eleftherios Tzanis  
