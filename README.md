@@ -5,7 +5,7 @@
 > An open-source multi-agentic system for automated end-to-end development of radiomics and deep learning models for medical imaging
 
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
-![Python](https://img.shields.io/badge/python-3.10+-blue.svg)  
+![Python](https://img.shields.io/badge/python-3.11+-green.svg)  
 
 ---
 
