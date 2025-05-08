@@ -11,7 +11,6 @@ You can request access to the required files from this Google Drive folder:
 
 Click the link and press "Request access" using your Google account.
 
-\*\*
 
 1. `maistro_env_v1.tar` – The prebuilt Docker image with all dependencies
 2. `mAIstro_workspace.zip` – A compressed folder containing:
