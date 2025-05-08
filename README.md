@@ -44,13 +44,6 @@ Stay tuned for updates!
 
 ---
 
-## 🤝 Contributing
-
-Contributions are welcome!  
-Please feel free to fork the repository and submit pull requests. For major changes, open an issue first to discuss your ideas.
-
----
-
 ## 📄 License
 
 This project is licensed under the **Apache License 2.0**.  
