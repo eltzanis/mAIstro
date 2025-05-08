@@ -1,0 +1,5 @@
+This software has been developed in the Artificial Intelligence and Translational Imaging (ATI) Lab by Eleftherios Tzanis, PhD and Michail E. Klontzas, MD, PhD.
+
+This software is distributed under the Apache 2.0 license and use of the software requires citing the following:
+
+Tzanis E., Klontzas M. E. (2025). mAIstro: an open-source multi-agentic system for automated end-to-end development of radiomics and deep learning models for medical imaging. arXiv: 2505.03785, DOI: https://doi.org/10.48550/arXiv.2505.03785
