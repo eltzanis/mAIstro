@@ -24,7 +24,7 @@ Built on top of 🤗 Hugging Face's [smolagents](https://github.com/huggingface/
 - 🧬 **Radiomics feature extraction** (for CT, MRI, and multi-parametric imaging)
 - ⚙️ **nnU-Net Agent** for segmentation model development and implementation
 - ⚙️ **TotalSegmentator Agent** for full-body and organ-specific automatic segmentation
-- 🖼️ **Image Classification Agent** (ResNet, VGG16, InceptionV3 architectures)
+- 🩻 **Image Classification Agent** (ResNet, VGG16, InceptionV3 architectures)
 - 📊 **Feature Importance and Feature Selection**
 - 📈 **Tabular data Classification and Regression Agents**
 - 🛠️ Modular tool-based architecture for extensibility
@@ -32,30 +32,9 @@ Built on top of 🤗 Hugging Face's [smolagents](https://github.com/huggingface/
 
 ---
 
-## 🔧 Dependencies
+## ⚙️ Instructions to Set Up Docker and Run the mAIstro Environment
 
-The framework relies on the following core Python packages:
-
-- `torch` (PyTorch)
-- `nnunetv2`
-- `totalsegmentator`
-- `smolagents`
-- `pycaret`
-- `pyradiomics`
-
-Users should ensure these libraries are installed and properly configured before using the system. 
-
-For nnU-Net setup and environment configuration, please follow the official instructions:  
-🔗 [nnU-Net Setup Guide](https://github.com/MIC-DKFZ/nnUNet/blob/master/documentation/installation_instructions.md)
-
----
-
-## 🧠 How to Use
-
-- Open and run the `mAIstro.ipynb` notebook.
-- Choose a natural language prompt corresponding to your task (e.g., train a model, extract radiomics, perform EDA).
-- mAIstro's agents will autonomously reason, select the right tools, execute the task, and generate outputs.
-- All results (plots, trained models, reports) will be saved automatically in specified directories.
+👉 [Instructions to set up Docker and run mAIstro](./install_mAIstro_env.md)
 
 ---
 
