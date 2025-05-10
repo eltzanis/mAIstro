@@ -123,6 +123,8 @@ cd C:\Users\yourname\Documents\mAIstro_workspace
 ```
 
 3. Run the container:
+   
+Command for Command Prompt
 
 ```powershell
 docker run -it --rm ^
@@ -136,7 +138,20 @@ docker run -it --rm ^
   --name maistro_temp ^
   maistro_env:v1.0
 ```
+Command for PowerShell
 
+```powershell
+docker run -it --rm `
+  --gpus all `
+  -p 8888:8888 `
+  -v "${PWD}:/workspace" `
+  -e nnUNet_raw="/workspace/nnUNet_paths/nnUNet_raw" `
+  -e nnUNet_preprocessed="/workspace/nnUNet_paths/nnUNet_preprocessed" `
+  -e nnUNet_results="/workspace/nnUNet_paths/nnUNet_results" `
+  --shm-size=8g `
+  --name maistro_temp `
+  maistro_env:v1.0
+```
 * `--gpus all`: Enables GPU access
 * `-v "%cd%":/workspace`: Mounts your workspace into the container
 * `-e ...`: Sets paths to nnUNet data if it's inside the workspace folder
