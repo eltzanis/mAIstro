@@ -9,8 +9,7 @@ This guide explains how to install Docker with GPU support on Windows and Linux,
 You can download the required files from this Google Drive folder:
 👉 **[Download mAIstro Files](https://drive.google.com/drive/folders/1Nk72e4olzfZEVDjXj_Yi4S_q-xBXoL1b?usp=sharing)**
 
-Click the link and press "Request access" using your Google account.
-
+Click the link and download the files:
 
 1. `maistro_env_v1.tar` – The prebuilt Docker image with all dependencies
 2. `mAIstro_workspace.zip` – A compressed folder containing:
