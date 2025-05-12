@@ -6,8 +6,8 @@ This guide explains how to install Docker with GPU support on Windows and Linux,
 ---
 ## 📁 Files You Will Receive
 
-You can request access to the required files from this Google Drive folder:
-👉 **[Request Access to mAIstro Files](https://drive.google.com/drive/folders/1Nk72e4olzfZEVDjXj_Yi4S_q-xBXoL1b?usp=sharing)**
+You can download the required files from this Google Drive folder:
+👉 **[Download mAIstro Files](https://drive.google.com/drive/folders/1Nk72e4olzfZEVDjXj_Yi4S_q-xBXoL1b?usp=sharing)**
 
 Click the link and press "Request access" using your Google account.
 
