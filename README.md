@@ -31,7 +31,7 @@ Built on top of 🤗 Hugging Face's [smolagents](https://github.com/huggingface/
 
 ---
 
-##⚙️ Instructions to Set Up Docker and Run the mAIstro Environment
+## ⚙️ Instructions to Set Up Docker and Run the mAIstro Environment
 
 👉 [Instructions to set up Docker and run mAIstro](./install_mAIstro_env.md)
 
