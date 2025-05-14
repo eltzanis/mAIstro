@@ -31,27 +31,29 @@ Built on top of 🤗 Hugging Face's [smolagents](https://github.com/huggingface/
 
 ---
 
-## ⚙️ Instructions to Set Up Docker and Run the mAIstro Environment
+##⚙️ Instructions to Set Up Docker and Run the mAIstro Environment
 
 👉 [Instructions to set up Docker and run mAIstro](./install_mAIstro_env.md)
 
 ---
-🔗 Run mAIstro Instantly on Google Colab
+## 🔗 Run mAIstro Instantly on Google Colab
+
 Want to try mAIstro without setting up anything locally?
 You can now run the full framework directly on Google Colab — no installation required!
 
 👉 [**Launch mAIstro on Colab**](https://colab.research.google.com/drive/1aXNwh9hT9txLIiPetAtIed0_lYiCE3Wv?usp=sharing)
 
-✅ What’s included:
-✅ All necessary requirements are automatically installed
+What’s included:
 
-✅ The full mAIstro_workspace folder is downloaded, including:
+All necessary requirements are automatically installed
 
-Experiment data
+The full mAIstro_workspace folder is downloaded, including:
 
-Predefined folders and structure
+  ✅Experiment data
 
-Ready-to-run example prompts pointing to the correct locations
+  ✅Predefined folders and structure
+
+  ✅Ready-to-run example prompts pointing to the correct locations
 
 🔐 What you need to do:
 The only manual step is to provide your API key for the LLM of your choice (e.g., OpenAI, Claude, DeepSeek, etc.).
