@@ -36,6 +36,31 @@ Built on top of 🤗 Hugging Face's [smolagents](https://github.com/huggingface/
 👉 [Instructions to set up Docker and run mAIstro](./install_mAIstro_env.md)
 
 ---
+🔗 Run mAIstro Instantly on Google Colab
+Want to try mAIstro without setting up anything locally?
+You can now run the full framework directly on Google Colab — no installation required!
+
+👉 [**Launch mAIstro on Colab**](https://colab.research.google.com/drive/1aXNwh9hT9txLIiPetAtIed0_lYiCE3Wv?usp=sharing)
+
+✅ What’s included:
+✅ All necessary requirements are automatically installed
+
+✅ The full mAIstro_workspace folder is downloaded, including:
+
+Experiment data
+
+Predefined folders and structure
+
+Ready-to-run example prompts pointing to the correct locations
+
+🔐 What you need to do:
+The only manual step is to provide your API key for the LLM of your choice (e.g., OpenAI, Claude, DeepSeek, etc.).
+
+A pre-configured cell is provided with options for multiple LLM providers – just paste your key and you're ready to go!
+
+This makes it easy to explore and test the full functionality of mAIstro on any device, using just your browser.
+
+---
 
 ## 📚 Documentation
 A full user guide and advanced examples will be provided soon.  
@@ -47,16 +72,6 @@ Stay tuned for updates!
 
 This project is licensed under the **Apache License 2.0**.  
 You are free to use, modify, and distribute this software under the terms of the license.
-
----
-
-## 🧡 Acknowledgments
-
-- 🤗 Huggingface [`smolagents`](https://github.com/huggingface/smolagents) for lightweight agentic abstractions
-- ⚙️ [`nnU-Net`](https://github.com/MIC-DKFZ/nnUNet) for segmentation pipelines
-- ⚙️ [`TotalSegmentator`](https://github.com/wasserth/TotalSegmentator) for multi-organ segmentation
-- 🧬 [`PyRadiomics`](https://github.com/Radiomics/pyradiomics) for radiomics feature extraction
-- 📊 [`PyCaret`](https://github.com/pycaret/pycaret) for tabular data modeling
 
 ---
 
