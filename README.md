@@ -39,6 +39,7 @@ Built on top of 🤗 Hugging Face's [smolagents](https://github.com/huggingface/
 ## 🔗 Run mAIstro Instantly on Google Colab
 
 Want to try mAIstro without setting up anything locally?
+
 You can now run the full framework directly on Google Colab
 
 👉 [**Launch mAIstro on Colab**](https://colab.research.google.com/drive/1aXNwh9hT9txLIiPetAtIed0_lYiCE3Wv?usp=sharing)
