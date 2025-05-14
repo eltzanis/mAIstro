@@ -36,7 +36,7 @@ Built on top of 🤗 Hugging Face's [smolagents](https://github.com/huggingface/
 👉 [Instructions to set up Docker and run mAIstro](./install_mAIstro_env.md)
 
 ---
-## 🔗 Run mAIstro Instantly on Google Colab
+## 🔗 Run mAIstro instantly on Google Colab
 
 Want to try mAIstro without setting up anything locally?
 
