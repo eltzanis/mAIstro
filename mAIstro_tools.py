@@ -7,8 +7,12 @@ import time
 from datetime import datetime
 import logging
 import tempfile
+import shutil
+import contextlib
+import traceback
+from pathlib import Path
 import subprocess
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Optional, List, Tuple, Union, Any
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
@@ -214,10 +218,24 @@ class PyRadiomicsFeatureExtractionTool(Tool):
         Returns:
             Dictionary with feature extraction results and file paths
         """
+        # Create a temp directory variable that we can clean up in finally block
+        temp_dir = None
+        
         try:
+            # Validate input directories exist
+            self._validate_directories(image_dir, mask_dir, output_dir)
+            
             # Set up logging
             os.makedirs(output_dir, exist_ok=True)
             log_file = os.path.join(output_dir, "radiomics_extraction.log")
+            
+            # Reset the root logger to prevent duplicate logging
+            root_logger = logging.getLogger()
+            if root_logger.handlers:
+                for handler in root_logger.handlers[:]:
+                    root_logger.removeHandler(handler)
+                    
+            # Configure logging with basicConfig (affects the global state)
             logging.basicConfig(
                 level=logging.INFO,
                 format='%(asctime)s - %(levelname)s - %(message)s',
@@ -227,25 +245,36 @@ class PyRadiomicsFeatureExtractionTool(Tool):
                 ]
             )
             
+            # Use the root logger
+            logger = logging.getLogger()
+            
             # Set default values
             if pixel_spacing is None:
                 pixel_spacing = [1.0, 1.0, 1.0]
             
+            # Validate id_pattern if provided
+            if id_pattern:
+                try:
+                    re.compile(id_pattern)
+                except re.error:
+                    logger.warning(f"Invalid regex pattern provided: {id_pattern}. Defaulting to filename matching.")
+                    id_pattern = None
+            
             # Log configuration
-            logging.info(f"Starting radiomic feature extraction with configuration:")
-            logging.info(f"Image directory: {image_dir}")
-            logging.info(f"Mask directory: {mask_dir}")
-            logging.info(f"Output directory: {output_dir}")
-            logging.info(f"Image types: {image_types if image_types else 'All available'}")
-            logging.info(f"Feature classes: {feature_classes if feature_classes else 'All available'}")
-            logging.info(f"Specific features: {specific_features if specific_features else 'None'}")
-            logging.info(f"Mask labels: {mask_labels if mask_labels else 'All non-zero'}")
-            logging.info(f"Normalize: {normalize}")
-            logging.info(f"Bin width: {bin_width}")
-            logging.info(f"Resample: {resample}")
-            logging.info(f"Pixel spacing: {pixel_spacing}")
-            logging.info(f"Force 2D: {force_2d}")
-            logging.info(f"Number of workers: {n_workers}")
+            logger.info(f"Starting radiomic feature extraction with configuration:")
+            logger.info(f"Image directory: {image_dir}")
+            logger.info(f"Mask directory: {mask_dir}")
+            logger.info(f"Output directory: {output_dir}")
+            logger.info(f"Image types: {image_types if image_types else 'All available'}")
+            logger.info(f"Feature classes: {feature_classes if feature_classes else 'All available'}")
+            logger.info(f"Specific features: {specific_features if specific_features else 'None'}")
+            logger.info(f"Mask labels: {mask_labels if mask_labels else 'All non-zero'}")
+            logger.info(f"Normalize: {normalize}")
+            logger.info(f"Bin width: {bin_width}")
+            logger.info(f"Resample: {resample}")
+            logger.info(f"Pixel spacing: {pixel_spacing}")
+            logger.info(f"Force 2D: {force_2d}")
+            logger.info(f"Number of workers: {n_workers}")
             
             # Prepare PyRadiomics parameters
             params = self._create_pyradiomics_params(
@@ -263,43 +292,69 @@ class PyRadiomicsFeatureExtractionTool(Tool):
             params_file = os.path.join(output_dir, "radiomics_params.yaml")
             with open(params_file, 'w') as f:
                 yaml.dump(params, f)
-            logging.info(f"PyRadiomics parameters saved to {params_file}")
+            logger.info(f"PyRadiomics parameters saved to {params_file}")
             
             # Initialize feature extractor
             extractor = featureextractor.RadiomicsFeatureExtractor(params_file)
-            logging.info(f"Feature extractor initialized with {len(extractor.enabledFeatures)} features")
+            logger.info(f"Feature extractor initialized with {len(extractor.enabledFeatures)} features")
             
             # Load target values if provided
             target_dict = None
-            if targets_csv and os.path.exists(targets_csv):
-                logging.info(f"Loading target values from {targets_csv}")
-                target_dict = self._load_targets(
-                    targets_csv, 
-                    id_column=id_column, 
-                    target_column=target_column
-                )
-                logging.info(f"Loaded {len(target_dict)} target values")
+            if targets_csv:
+                if not os.path.exists(targets_csv):
+                    logger.warning(f"Target CSV file not found: {targets_csv}")
+                else:
+                    logger.info(f"Loading target values from {targets_csv}")
+                    target_dict = self._load_targets(
+                        targets_csv, 
+                        id_column=id_column, 
+                        target_column=target_column
+                    )
+                    logger.info(f"Loaded {len(target_dict)} target values")
             
             # Find image and mask files
             image_files = sorted(glob.glob(os.path.join(image_dir, image_pattern)))
             mask_files = sorted(glob.glob(os.path.join(mask_dir, mask_pattern)))
             
-            logging.info(f"Found {len(image_files)} image files and {len(mask_files)} mask files")
+            if not image_files:
+                logger.error(f"No image files found in {image_dir} with pattern {image_pattern}")
+                return {
+                    "status": "error",
+                    "error_message": f"No image files found in {image_dir} with pattern {image_pattern}",
+                    "image_dir": image_dir,
+                    "mask_dir": mask_dir
+                }
+                
+            if not mask_files:
+                logger.error(f"No mask files found in {mask_dir} with pattern {mask_pattern}")
+                return {
+                    "status": "error",
+                    "error_message": f"No mask files found in {mask_dir} with pattern {mask_pattern}",
+                    "image_dir": image_dir,
+                    "mask_dir": mask_dir
+                }
+            
+            logger.info(f"Found {len(image_files)} image files and {len(mask_files)} mask files")
             
             # Match images and masks
             image_mask_pairs, unmatched = self._match_images_and_masks(
                 image_files, 
                 mask_files, 
-                id_pattern=id_pattern
+                id_pattern=id_pattern,
+                logger=logger
             )
             
-            logging.info(f"Matched {len(image_mask_pairs)} image-mask pairs")
+            logger.info(f"Matched {len(image_mask_pairs)} image-mask pairs")
             if unmatched['images'] or unmatched['masks']:
-                logging.warning(f"Unmatched images: {len(unmatched['images'])}, unmatched masks: {len(unmatched['masks'])}")
+                logger.warning(f"Unmatched images: {len(unmatched['images'])}, unmatched masks: {len(unmatched['masks'])}")
+                if unmatched['images']:
+                    logger.debug(f"Unmatched image examples: {unmatched['images'][:5]}")
+                if unmatched['masks']:
+                    logger.debug(f"Unmatched mask examples: {unmatched['masks'][:5]}")
             
             # Check if we have any pairs to process
             if not image_mask_pairs:
-                logging.error("No matching image-mask pairs found. Check your files and patterns.")
+                logger.error("No matching image-mask pairs found. Check your files and patterns.")
                 return {
                     "status": "error",
                     "error_message": "No matching image-mask pairs found",
@@ -309,12 +364,12 @@ class PyRadiomicsFeatureExtractionTool(Tool):
             
             # Determine available labels in masks if not specified
             if mask_labels is None:
-                mask_labels = self._find_available_labels(mask_files)
-                logging.info(f"Found {len(mask_labels)} unique labels in masks: {mask_labels}")
+                mask_labels = self._find_available_labels(mask_files, logger=logger)
+                logger.info(f"Found {len(mask_labels)} unique labels in masks: {mask_labels}")
             
             # Create a temporary directory for extracted masks by label
             temp_dir = tempfile.mkdtemp(dir=output_dir)
-            logging.info(f"Created temporary directory for masks: {temp_dir}")
+            logger.info(f"Created temporary directory for masks: {temp_dir}")
             
             # Process each image-mask pair
             start_time = time.time()
@@ -326,25 +381,31 @@ class PyRadiomicsFeatureExtractionTool(Tool):
             if n_workers <= 1:
                 # Serial processing
                 for i, (subject_id, files) in enumerate(image_mask_pairs.items()):
-                    self._process_subject(
-                        subject_id, 
-                        files, 
-                        mask_labels, 
-                        extractor, 
-                        temp_dir, 
-                        all_features_by_label, 
-                        target_dict,
-                        i + 1,
-                        len(image_mask_pairs)
-                    )
+                    try:
+                        self._process_subject(
+                            subject_id, 
+                            files, 
+                            mask_labels, 
+                            extractor, 
+                            temp_dir, 
+                            all_features_by_label, 
+                            target_dict,
+                            i + 1,
+                            len(image_mask_pairs),
+                            logger=logger
+                        )
+                    except Exception as e:
+                        logger.error(f"Error processing subject {subject_id}: {str(e)}")
+                        logger.debug(traceback.format_exc())
             else:
                 # Parallel processing
-                logging.info(f"Using {n_workers} workers for parallel processing")
+                logger.info(f"Using {n_workers} workers for parallel processing")
                 
                 # Create arguments for parallel processing
                 process_args = []
                 for i, (subject_id, files) in enumerate(image_mask_pairs.items()):
-                    subject_temp_dir = os.path.join(temp_dir, subject_id)
+                    # Create a unique temp directory for each subject to avoid conflicts
+                    subject_temp_dir = os.path.join(temp_dir, f"subject_{subject_id}")
                     os.makedirs(subject_temp_dir, exist_ok=True)
                     
                     target_value = None
@@ -360,7 +421,8 @@ class PyRadiomicsFeatureExtractionTool(Tool):
                         subject_temp_dir,
                         target_value,
                         i + 1,
-                        len(image_mask_pairs)
+                        len(image_mask_pairs),
+                        log_file  # Pass log file path to enable logging in subprocess
                     ))
                 
                 # Execute in parallel
@@ -375,17 +437,24 @@ class PyRadiomicsFeatureExtractionTool(Tool):
                                 if features:  # Only add if features were extracted
                                     all_features_by_label[label].append(features)
                         except Exception as e:
-                            logging.error(f"Error in parallel processing: {str(e)}")
+                            logger.error(f"Error in parallel processing: {str(e)}")
+                            logger.debug(traceback.format_exc())
             
             # Calculate processing time
             processing_time = time.time() - start_time
-            logging.info(f"Feature extraction completed in {processing_time:.2f} seconds")
+            logger.info(f"Feature extraction completed in {processing_time:.2f} seconds")
             
             # Save features to CSV files
             csv_paths = {}
+            
+            # Check if any features were extracted
+            total_features_count = sum(len(features) for features in all_features_by_label.values())
+            if total_features_count == 0:
+                logger.warning("No features were successfully extracted for any label")
+                
             for label, features in all_features_by_label.items():
                 if not features:
-                    logging.warning(f"No features extracted for label {label}")
+                    logger.warning(f"No features extracted for label {label}")
                     continue
                 
                 # Convert to DataFrame
@@ -399,28 +468,35 @@ class PyRadiomicsFeatureExtractionTool(Tool):
                 # Sort feature columns for consistency
                 feature_cols.sort()
                 
-                # Reorder columns
-                df = df[id_cols + target_cols + feature_cols]
+                # Reorder columns - make sure all columns exist
+                all_cols = [col for col in id_cols + target_cols + feature_cols if col in df.columns]
+                df = df[all_cols]
                 
                 # Save to CSV
                 csv_path = os.path.join(output_dir, f"radiomic_features_label_{label}.csv")
                 df.to_csv(csv_path, index=False)
-                logging.info(f"Saved {len(df)} subjects with {len(df.columns) - len(id_cols) - len(target_cols)} features for label {label} to {csv_path}")
+                logger.info(f"Saved {len(df)} subjects with {len(df.columns) - len(id_cols) - len(target_cols)} features for label {label} to {csv_path}")
                 
                 csv_paths[f"label_{label}"] = csv_path
             
-            # Clean up temporary directory
-            import shutil
-            shutil.rmtree(temp_dir)
-            logging.info(f"Removed temporary directory: {temp_dir}")
+            # Clean up temporary directory (this will be done in the finally block)
+            
+            # Calculate feature counts properly
+            feature_counts = {}
+            for label, features_list in all_features_by_label.items():
+                if features_list:
+                    df = pd.DataFrame(features_list)
+                    id_cols = [col for col in df.columns if col.lower() in ['id', 'subject_id', 'patientid']]
+                    target_cols = [col for col in df.columns if col.lower() in ['target', 'label', 'outcome']]
+                    feature_count = len(df.columns) - len(id_cols) - len(target_cols)
+                    feature_counts[label] = feature_count
             
             # Return results
             return {
                 "status": "success",
                 "csv_paths": csv_paths,
                 "num_subjects": len(image_mask_pairs),
-                "num_features": {label: len(df.columns) - 1 - (1 if target_dict else 0) for label, df in 
-                               [(label, pd.DataFrame(features)) for label, features in all_features_by_label.items() if features]},
+                "num_features": feature_counts,
                 "mask_labels": mask_labels,
                 "log_file": log_file,
                 "params_file": params_file,
@@ -428,7 +504,14 @@ class PyRadiomicsFeatureExtractionTool(Tool):
             }
             
         except Exception as e:
-            logging.error(f"Error during radiomic feature extraction: {str(e)}", exc_info=True)
+            # Handle any unexpected exceptions
+            if 'logger' in locals():
+                logger.error(f"Error during radiomic feature extraction: {str(e)}")
+                logger.debug(traceback.format_exc())
+            else:
+                print(f"Error during radiomic feature extraction: {str(e)}")
+                traceback.print_exc()
+                
             return {
                 "status": "error",
                 "error_message": str(e),
@@ -436,6 +519,29 @@ class PyRadiomicsFeatureExtractionTool(Tool):
                 "mask_dir": mask_dir,
                 "output_dir": output_dir
             }
+            
+        finally:
+            # Clean up temp directory if it was created
+            if temp_dir and os.path.exists(temp_dir):
+                try:
+                    shutil.rmtree(temp_dir)
+                    if 'logger' in locals():
+                        logger.info(f"Removed temporary directory: {temp_dir}")
+                    else:
+                        print(f"Removed temporary directory: {temp_dir}")
+                except Exception as e:
+                    if 'logger' in locals():
+                        logger.warning(f"Failed to remove temporary directory {temp_dir}: {str(e)}")
+                    else:
+                        print(f"Failed to remove temporary directory {temp_dir}: {str(e)}")
+    
+    def _validate_directories(self, image_dir, mask_dir, output_dir):
+        """Validate that input directories exist"""
+        for directory, name in [(image_dir, "Image directory"), (mask_dir, "Mask directory")]:
+            if not os.path.exists(directory):
+                raise ValueError(f"{name} does not exist: {directory}")
+            if not os.path.isdir(directory):
+                raise ValueError(f"{name} is not a directory: {directory}")
     
     def _create_pyradiomics_params(
         self, 
@@ -449,9 +555,9 @@ class PyRadiomicsFeatureExtractionTool(Tool):
         force_2d=False
     ):
         """Create PyRadiomics parameters dictionary"""
-        # Default image types
+        # Default image types based on modality - more conservative default
         if image_types is None:
-            image_types = ["Original", "Wavelet", "LoG"]
+            image_types = ["Original", "Wavelet"]
         
         # Default feature classes with all their features
         if feature_classes is None and specific_features is None:
@@ -494,6 +600,8 @@ class PyRadiomicsFeatureExtractionTool(Tool):
                 params["imageType"]["Exponential"] = {}
             elif img_type == "Gradient":
                 params["imageType"]["Gradient"] = {}
+            elif img_type == "SquareRoot":
+                params["imageType"]["SquareRoot"] = {}
             elif img_type == "LBP2D":
                 params["imageType"]["LBP2D"] = {}
             elif img_type == "LBP3D":
@@ -524,7 +632,7 @@ class PyRadiomicsFeatureExtractionTool(Tool):
         
         return params
     
-    def _load_targets(self, targets_csv, id_column=None, target_column=None):
+    def _load_targets(self, targets_csv, id_column=None, target_column=None, logger=None):
         """Load target values from CSV file"""
         try:
             # Read the CSV file
@@ -533,15 +641,23 @@ class PyRadiomicsFeatureExtractionTool(Tool):
             # Determine columns to use
             if id_column is None:
                 id_column = df.columns[0]  # Use first column as ID
+                if logger:
+                    logger.info(f"No ID column specified, using first column: {id_column}")
             
             if target_column is None:
                 target_column = df.columns[1]  # Use second column as target
+                if logger:
+                    logger.info(f"No target column specified, using second column: {target_column}")
             
             # Check if columns exist
             if id_column not in df.columns:
+                if logger:
+                    logger.error(f"ID column '{id_column}' not found in {targets_csv}")
                 raise ValueError(f"ID column '{id_column}' not found in {targets_csv}")
             
             if target_column not in df.columns:
+                if logger:
+                    logger.error(f"Target column '{target_column}' not found in {targets_csv}")
                 raise ValueError(f"Target column '{target_column}' not found in {targets_csv}")
             
             # Create dictionary mapping IDs to target values
@@ -554,10 +670,12 @@ class PyRadiomicsFeatureExtractionTool(Tool):
             return target_dict
             
         except Exception as e:
-            logging.error(f"Error loading targets: {str(e)}")
+            if logger:
+                logger.error(f"Error loading targets: {str(e)}")
+                logger.debug(traceback.format_exc())
             return {}
     
-    def _match_images_and_masks(self, image_files, mask_files, id_pattern=None):
+    def _match_images_and_masks(self, image_files, mask_files, id_pattern=None, logger=None):
         """Match image and mask files by subject ID"""
         image_mask_pairs = {}
         unmatched = {"images": [], "masks": []}
@@ -566,15 +684,35 @@ class PyRadiomicsFeatureExtractionTool(Tool):
         def extract_id(filepath, pattern=None):
             filename = os.path.basename(filepath)
             if pattern:
-                match = re.search(pattern, filename)
-                if match:
-                    return match.group(1)
+                try:
+                    match = re.search(pattern, filename)
+                    if match and match.groups():
+                        return match.group(1)
+                except re.error:
+                    if logger:
+                        logger.warning(f"Invalid regex pattern: {pattern}. Falling back to filename matching.")
+                    return os.path.splitext(filename)[0]
             # Default: use filename without extension
             return os.path.splitext(filename)[0]
         
         # Create dictionaries for images and masks with subject IDs as keys
-        images_dict = {extract_id(f, id_pattern): f for f in image_files}
-        masks_dict = {extract_id(f, id_pattern): f for f in mask_files}
+        images_dict = {}
+        for f in image_files:
+            subject_id = extract_id(f, id_pattern)
+            # Handle duplicate subject IDs
+            if subject_id in images_dict:
+                if logger:
+                    logger.warning(f"Duplicate subject ID '{subject_id}' found in images: {images_dict[subject_id]} and {f}")
+            images_dict[subject_id] = f
+            
+        masks_dict = {}
+        for f in mask_files:
+            subject_id = extract_id(f, id_pattern)
+            # Handle duplicate subject IDs
+            if subject_id in masks_dict:
+                if logger:
+                    logger.warning(f"Duplicate subject ID '{subject_id}' found in masks: {masks_dict[subject_id]} and {f}")
+            masks_dict[subject_id] = f
         
         # Find matching pairs
         all_subjects = set(images_dict.keys()) | set(masks_dict.keys())
@@ -592,7 +730,7 @@ class PyRadiomicsFeatureExtractionTool(Tool):
         
         return image_mask_pairs, unmatched
     
-    def _find_available_labels(self, mask_files, max_files_to_check=10):
+    def _find_available_labels(self, mask_files, max_files_to_check=10, logger=None):
         """Find unique label values in mask files"""
         unique_labels = set()
         
@@ -601,6 +739,7 @@ class PyRadiomicsFeatureExtractionTool(Tool):
         
         for mask_file in files_to_check:
             try:
+                # Read the mask file
                 mask_image = sitk.ReadImage(mask_file)
                 mask_array = sitk.GetArrayFromImage(mask_image)
                 
@@ -612,9 +751,19 @@ class PyRadiomicsFeatureExtractionTool(Tool):
                     unique_labels.add(int(label))
                     
             except Exception as e:
-                logging.warning(f"Error reading mask {mask_file}: {str(e)}")
+                if logger:
+                    logger.warning(f"Error reading mask {mask_file}: {str(e)}")
+                
+        # Ensure we found at least one label
+        if not unique_labels and mask_files:
+            if logger:
+                logger.warning("No non-zero labels found in the mask files.")
+            # Fallback to label 1 if no labels were found
+            unique_labels.add(1)
+            if logger:
+                logger.info("Added fallback label 1 to ensure processing continues.")
         
-        return list(unique_labels)
+        return sorted(list(unique_labels))
     
     def _process_subject(
         self, 
@@ -626,16 +775,30 @@ class PyRadiomicsFeatureExtractionTool(Tool):
         all_features_by_label, 
         target_dict,
         subject_index,
-        total_subjects
+        total_subjects,
+        logger=None
     ):
         """Process a single subject and extract features for each label"""
         try:
-            logging.info(f"Processing subject {subject_id} ({subject_index}/{total_subjects})")
+            if logger:
+                logger.info(f"Processing subject {subject_id} ({subject_index}/{total_subjects})")
             
             # Read image and mask
             image_path = files['image']
             mask_path = files['mask']
             
+            # Validate files exist
+            if not os.path.exists(image_path):
+                if logger:
+                    logger.error(f"Image file does not exist: {image_path}")
+                return
+                
+            if not os.path.exists(mask_path):
+                if logger:
+                    logger.error(f"Mask file does not exist: {mask_path}")
+                return
+            
+            # Read the image and mask
             orig_image = sitk.ReadImage(image_path)
             orig_mask = sitk.ReadImage(mask_path)
             
@@ -647,7 +810,8 @@ class PyRadiomicsFeatureExtractionTool(Tool):
                 
                 # Skip if no voxels with this label
                 if np.sum(binary_mask) == 0:
-                    logging.info(f"Subject {subject_id}: No voxels with label {label}, skipping")
+                    if logger:
+                        logger.info(f"Subject {subject_id}: No voxels with label {label}, skipping")
                     continue
                 
                 # Create a SimpleITK image from the binary mask
@@ -664,7 +828,7 @@ class PyRadiomicsFeatureExtractionTool(Tool):
                     
                     # Convert to regular dictionary and remove diagnostic keys
                     features = {str(key): value for key, value in result.items() 
-                               if not key.startswith('diagnostics_')}
+                              if not key.startswith('diagnostics_')}
                     
                     # Add subject ID and target value if available
                     features['subject_id'] = subject_id
@@ -674,16 +838,29 @@ class PyRadiomicsFeatureExtractionTool(Tool):
                     # Add to the corresponding label's feature list
                     all_features_by_label[label].append(features)
                     
-                    logging.info(f"Subject {subject_id}: Extracted {len(features)} features for label {label}")
+                    if logger:
+                        logger.info(f"Subject {subject_id}: Extracted {len(features)} features for label {label}")
                     
                 except Exception as e:
-                    logging.error(f"Error extracting features for subject {subject_id}, label {label}: {str(e)}")
+                    if logger:
+                        logger.error(f"Error extracting features for subject {subject_id}, label {label}: {str(e)}")
+                        logger.debug(traceback.format_exc())
+                
+                # Clean up the temporary mask file
+                try:
+                    if os.path.exists(label_mask_path):
+                        os.remove(label_mask_path)
+                except Exception as e:
+                    if logger:
+                        logger.warning(f"Error removing temporary mask file {label_mask_path}: {str(e)}")
             
         except Exception as e:
-            logging.error(f"Error processing subject {subject_id}: {str(e)}")
+            if logger:
+                logger.error(f"Error processing subject {subject_id}: {str(e)}")
+                logger.debug(traceback.format_exc())
     
+    @staticmethod
     def _process_subject_parallel(
-        self, 
         subject_id,
         image_path,
         mask_path, 
@@ -692,10 +869,40 @@ class PyRadiomicsFeatureExtractionTool(Tool):
         temp_dir,
         target_value,
         subject_index,
-        total_subjects
+        total_subjects,
+        log_file
     ):
         """Process a single subject in parallel mode"""
+        # Set up basic logging for the subprocess
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler(log_file)
+            ]
+        )
+        
+        # Use the root logger
+        logger = logging.getLogger()
+        
+        # Initialize variables for cleanup
+        created_files = []
+        
         try:
+            # Create temp directory if it doesn't exist
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            logger.info(f"Parallel process: processing subject {subject_id} ({subject_index}/{total_subjects})")
+            
+            # Validate files exist
+            if not os.path.exists(image_path):
+                logger.error(f"Image file does not exist: {image_path}")
+                return subject_id, {}
+                
+            if not os.path.exists(mask_path):
+                logger.error(f"Mask file does not exist: {mask_path}")
+                return subject_id, {}
+            
             # Initialize local extractor
             extractor = featureextractor.RadiomicsFeatureExtractor(params_file)
             
@@ -714,7 +921,7 @@ class PyRadiomicsFeatureExtractionTool(Tool):
                 
                 # Skip if no voxels with this label
                 if np.sum(binary_mask) == 0:
-                    print(f"Subject {subject_id}: No voxels with label {label}, skipping")
+                    logger.info(f"Subject {subject_id}: No voxels with label {label}, skipping")
                     continue
                 
                 # Create a SimpleITK image from the binary mask
@@ -724,6 +931,7 @@ class PyRadiomicsFeatureExtractionTool(Tool):
                 # Save the binary mask temporarily
                 label_mask_path = os.path.join(temp_dir, f"{subject_id}_label_{label}.nii.gz")
                 sitk.WriteImage(binary_mask_image, label_mask_path)
+                created_files.append(label_mask_path)
                 
                 # Extract features
                 try:
@@ -731,7 +939,7 @@ class PyRadiomicsFeatureExtractionTool(Tool):
                     
                     # Convert to regular dictionary and remove diagnostic keys
                     features = {str(key): value for key, value in result.items() 
-                               if not key.startswith('diagnostics_')}
+                              if not key.startswith('diagnostics_')}
                     
                     # Add subject ID and target value if available
                     features['subject_id'] = subject_id
@@ -741,16 +949,34 @@ class PyRadiomicsFeatureExtractionTool(Tool):
                     # Store features for this label
                     features_by_label[label] = features
                     
-                    print(f"Subject {subject_id}: Extracted {len(features)} features for label {label}")
+                    logger.info(f"Subject {subject_id}: Extracted {len(features)} features for label {label}")
                     
                 except Exception as e:
-                    print(f"Error extracting features for subject {subject_id}, label {label}: {str(e)}")
+                    logger.error(f"Error extracting features for subject {subject_id}, label {label}: {str(e)}")
+                    logger.debug(traceback.format_exc())
             
             return subject_id, features_by_label
             
         except Exception as e:
-            print(f"Error processing subject {subject_id}: {str(e)}")
+            logger.error(f"Error processing subject {subject_id}: {str(e)}")
+            logger.debug(traceback.format_exc())
             return subject_id, {}
+            
+        finally:
+            # Clean up temporary files
+            for file_path in created_files:
+                try:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                except Exception as e:
+                    logger.warning(f"Failed to clean up temporary file {file_path}: {str(e)}")
+            
+            # Try to clean up the temp directory, but only if it's empty
+            try:
+                if os.path.exists(temp_dir) and not os.listdir(temp_dir):
+                    os.rmdir(temp_dir)
+            except Exception as e:
+                logger.warning(f"Failed to remove temporary directory {temp_dir}: {str(e)}")
 
 #Exploratory Data Analysis Tool
 
@@ -765,6 +991,9 @@ class ExploratoryDataAnalysisTool(Tool):
     It analyzes the data structure, generates statistics, creates visualizations, and produces reports.
     Results are saved to a specified output directory for further inspection.
     """
+    
+    # Valid correlation methods
+    VALID_CORRELATION_METHODS = ['pearson', 'spearman', 'kendall']
     
     inputs = {
         "input_path": {
@@ -938,175 +1167,245 @@ class ExploratoryDataAnalysisTool(Tool):
         Returns:
             Dictionary with analysis results and file paths
         """
-        # Override visualization settings if create_figures is False
-        if not create_figures:
-            visualize_distributions = False
-            visualize_correlations = False
-            visualize_pairplot = False
-            visualize_target_relationships = False
-            
+        # Set up logging
+        logger = self._setup_logging()
+        
+        # Setup output directory and log file
+        log_file = None
+        
         try:
+            # Validate inputs
+            self._validate_inputs(
+                input_path, 
+                output_dir, 
+                correlation_method, 
+                categorical_threshold,
+                max_categories_pie,
+                sample_size,
+                max_columns_for_correlation,
+                max_columns_for_pairplot
+            )
+            
+            # Override visualization settings if create_figures is False
+            if not create_figures:
+                visualize_distributions = False
+                visualize_correlations = False
+                visualize_pairplot = False
+                visualize_target_relationships = False
+            
             # Create output directory if it doesn't exist
             os.makedirs(output_dir, exist_ok=True)
             
-            # Set up logging
+            # Set up logging file
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             log_file = os.path.join(output_dir, f"eda_log_{timestamp}.txt")
             
-            with open(log_file, 'w') as f:
-                f.write(f"EDA started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"Input file: {input_path}\n")
-                f.write(f"Output directory: {output_dir}\n\n")
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s'))
+            logger.addHandler(file_handler)
+            
+            logger.info(f"EDA started for file: {input_path}")
+            logger.info(f"Output directory: {output_dir}")
             
             # Load data
-            self._log(log_file, "Loading data...")
+            logger.info("Loading data...")
             df = self._load_data(input_path, sheet_name)
-            self._log(log_file, f"Data loaded successfully. Shape: {df.shape}")
+            logger.info(f"Data loaded successfully. Shape: {df.shape}")
             
             # Process columns to exclude
             excluded_columns = []
             if columns_to_exclude:
                 excluded_columns = [col.strip() for col in columns_to_exclude.split(',')]
-                df = df.drop(columns=[col for col in excluded_columns if col in df.columns])
-                self._log(log_file, f"Excluded columns: {excluded_columns}")
+                existing_excluded = [col for col in excluded_columns if col in df.columns]
+                
+                if len(existing_excluded) > 0:
+                    df = df.drop(columns=existing_excluded)
+                    logger.info(f"Excluded {len(existing_excluded)} columns: {existing_excluded}")
+                
+                if len(existing_excluded) < len(excluded_columns):
+                    not_found = set(excluded_columns) - set(existing_excluded)
+                    logger.warning(f"Some columns to exclude were not found in the dataset: {not_found}")
+            
+            # Check for target column
+            if target_column and target_column not in df.columns:
+                logger.warning(f"Target column '{target_column}' not found in the dataset. Target-based visualizations will be skipped.")
+                target_column = None
+                visualize_target_relationships = False
             
             # Sample data if needed
             original_row_count = len(df)
             if sampling_for_large_data and len(df) > sample_size:
-                self._log(log_file, f"Sampling data from {len(df)} to {sample_size} rows for visualization")
+                logger.info(f"Sampling data from {len(df)} to {sample_size} rows for visualization")
                 df_sampled = df.sample(sample_size, random_state=42)
             else:
                 df_sampled = df
             
             # Basic data profiling
-            self._log(log_file, "Performing basic data profiling...")
+            logger.info("Performing basic data profiling...")
             profile_results = self._profile_data(df)
             profile_path = os.path.join(output_dir, "data_profile.json")
             with open(profile_path, 'w') as f:
                 json.dump(profile_results, f, indent=2, default=str)
+            logger.info(f"Data profile saved to {profile_path}")
             
             # Save data summary
-            summary_stats_path = os.path.join(output_dir, "summary_statistics.txt")
-            with open(summary_stats_path, 'w') as f:
-                f.write("=== DATA SUMMARY ===\n\n")
-                f.write(f"Total rows: {len(df)}\n")
-                f.write(f"Total columns: {len(df.columns)}\n\n")
-                
-                f.write("=== COLUMN INFORMATION ===\n\n")
-                for col in df.columns:
-                    f.write(f"Column: {col}\n")
-                    f.write(f"  Type: {df[col].dtype}\n")
-                    f.write(f"  Missing values: {df[col].isna().sum()} ({(df[col].isna().sum() / len(df)) * 100:.2f}%)\n")
-                    
-                    if is_numeric_dtype(df[col]):
-                        f.write(f"  Min: {df[col].min()}\n")
-                        f.write(f"  Max: {df[col].max()}\n")
-                        f.write(f"  Mean: {df[col].mean()}\n")
-                        f.write(f"  Median: {df[col].median()}\n")
-                        f.write(f"  Std: {df[col].std()}\n")
-                    
-                    unique_count = df[col].nunique()
-                    f.write(f"  Unique values: {unique_count}\n")
-                    
-                    if unique_count <= categorical_threshold or is_categorical_dtype(df[col]):
-                        f.write("  Value counts:\n")
-                        for val, count in df[col].value_counts().head(10).items():
-                            f.write(f"    {val}: {count} ({(count / len(df)) * 100:.2f}%)\n")
-                        if unique_count > 10:
-                            f.write(f"    ... and {unique_count - 10} more values\n")
-                    
-                    f.write("\n")
-            
-            # Perform visualizations
-            generated_files = []
+            summary_stats_path = self._create_data_summary(df, output_dir, categorical_threshold)
+            logger.info(f"Summary statistics saved to {summary_stats_path}")
             
             # Create a figures directory
             figures_dir = os.path.join(output_dir, "figures")
             os.makedirs(figures_dir, exist_ok=True)
             
             # Detect column types
-            numeric_cols = df_sampled.select_dtypes(include=['number']).columns.tolist()
-            categorical_cols = [col for col in df_sampled.columns if col not in numeric_cols 
-                                or df_sampled[col].nunique() <= categorical_threshold]
-            datetime_cols = [col for col in df_sampled.columns if is_datetime64_any_dtype(df_sampled[col])]
+            column_types = self._detect_column_types(df_sampled, categorical_threshold)
+            numeric_cols = column_types['numeric']
+            categorical_cols = column_types['categorical']
+            datetime_cols = column_types['datetime']
             
-            # Visualize distributions
-            if visualize_distributions:
-                self._log(log_file, "Generating distribution visualizations...")
-                dist_files = self._visualize_distributions(df_sampled, figures_dir, 
-                                                          categorical_threshold, max_categories_pie)
-                generated_files.extend(dist_files)
+            logger.info(f"Detected {len(numeric_cols)} numeric columns, {len(categorical_cols)} categorical columns, and {len(datetime_cols)} datetime columns")
+            
+            # Initialize list to track generated files
+            generated_files = []
+            
+            # Perform visualizations
+            if create_figures:
+                logger.info("Starting visualizations...")
                 
-            # Visualize correlations
-            if visualize_correlations and len(numeric_cols) > 1:
-                self._log(log_file, "Generating correlation visualizations...")
-                try:
-                    # Limit columns for correlation if specified
-                    if max_columns_for_correlation and len(numeric_cols) > max_columns_for_correlation:
-                        self._log(log_file, f"Too many numeric columns ({len(numeric_cols)}) for correlation matrix. Limiting to top {max_columns_for_correlation}.")
-                        numeric_cols_corr = numeric_cols[:max_columns_for_correlation]
-                    else:
-                        numeric_cols_corr = numeric_cols
-                        
-                    corr_file = self._visualize_correlations(df_sampled[numeric_cols_corr], figures_dir, correlation_method)
-                    if corr_file:
-                        generated_files.append(corr_file)
-                except Exception as e:
-                    self._log(log_file, f"Error generating correlation visualization: {str(e)}")
+                # Visualize distributions
+                if visualize_distributions:
+                    logger.info("Generating distribution visualizations...")
+                    try:
+                        dist_files = self._visualize_distributions(
+                            df_sampled, 
+                            figures_dir, 
+                            categorical_threshold, 
+                            max_categories_pie
+                        )
+                        generated_files.extend(dist_files)
+                        logger.info(f"Generated {len(dist_files)} distribution visualizations")
+                    except Exception as e:
+                        logger.error(f"Error generating distribution visualizations: {str(e)}")
+                        logger.debug(traceback.format_exc())
                 
-            # Visualize pairplot
-            if visualize_pairplot and len(numeric_cols) > 1:
-                self._log(log_file, "Generating pairplot...")
-                try:
-                    # Limit columns for pairplot
-                    num_cols_for_pairplot = min(len(numeric_cols), max_columns_for_pairplot if max_columns_for_pairplot else 10)
-                    if len(numeric_cols) > num_cols_for_pairplot:
-                        self._log(log_file, f"Too many numeric columns ({len(numeric_cols)}) for pairplot. Limiting to top {num_cols_for_pairplot}.")
-                        numeric_cols_subset = numeric_cols[:num_cols_for_pairplot]
-                    else:
-                        numeric_cols_subset = numeric_cols
-                        
-                    pairplot_file = self._visualize_pairplot(df_sampled, numeric_cols_subset, figures_dir, target_column)
-                    if pairplot_file:
-                        generated_files.append(pairplot_file)
-                except Exception as e:
-                    self._log(log_file, f"Error generating pairplot: {str(e)}")
+                # Visualize correlations
+                if visualize_correlations and len(numeric_cols) > 1:
+                    logger.info("Generating correlation visualizations...")
+                    try:
+                        # Limit columns for correlation if specified
+                        if max_columns_for_correlation and len(numeric_cols) > max_columns_for_correlation:
+                            logger.info(f"Too many numeric columns ({len(numeric_cols)}) for correlation matrix. Limiting to top {max_columns_for_correlation}.")
+                            numeric_cols_corr = numeric_cols[:max_columns_for_correlation]
+                        else:
+                            numeric_cols_corr = numeric_cols
+                            
+                        corr_files = self._visualize_correlations(
+                            df_sampled[numeric_cols_corr], 
+                            figures_dir, 
+                            correlation_method
+                        )
+                        if corr_files:
+                            if isinstance(corr_files, list):
+                                generated_files.extend(corr_files)
+                                logger.info(f"Generated {len(corr_files)} correlation visualizations")
+                            else:
+                                generated_files.append(corr_files)
+                                logger.info("Generated correlation visualization")
+                    except Exception as e:
+                        logger.error(f"Error generating correlation visualization: {str(e)}")
+                        logger.debug(traceback.format_exc())
                 
-            # Visualize relationships with target if requested
-            if visualize_target_relationships and visualize_distributions and target_column and target_column in df.columns:
-                self._log(log_file, f"Generating visualizations for relationships with target: {target_column}")
-                target_files = self._visualize_target_relationships(df_sampled, target_column, figures_dir, 
-                                                                   categorical_threshold)
-                generated_files.extend(target_files)
+                # Visualize pairplot
+                if visualize_pairplot and len(numeric_cols) > 1:
+                    logger.info("Generating pairplot...")
+                    try:
+                        # Limit columns for pairplot
+                        max_cols = max_columns_for_pairplot or 10
+                        num_cols_for_pairplot = min(len(numeric_cols), max_cols)
+                        if len(numeric_cols) > num_cols_for_pairplot:
+                            logger.info(f"Too many numeric columns ({len(numeric_cols)}) for pairplot. Limiting to top {num_cols_for_pairplot}.")
+                            numeric_cols_subset = numeric_cols[:num_cols_for_pairplot]
+                        else:
+                            numeric_cols_subset = numeric_cols
+                            
+                        pairplot_file = self._visualize_pairplot(
+                            df_sampled, 
+                            numeric_cols_subset, 
+                            figures_dir, 
+                            target_column
+                        )
+                        if pairplot_file:
+                            generated_files.append(pairplot_file)
+                            logger.info("Generated pairplot visualization")
+                    except Exception as e:
+                        logger.error(f"Error generating pairplot: {str(e)}")
+                        logger.debug(traceback.format_exc())
                 
-            # Perform time series analysis if requested and datetime columns exist
-            if time_series_analysis and datetime_cols and visualize_distributions:
-                self._log(log_file, f"Performing time series analysis on columns: {datetime_cols}")
-                time_series_files = self._time_series_analysis(df, datetime_cols, figures_dir)
-                generated_files.extend(time_series_files)
+                # Visualize relationships with target if requested
+                if visualize_target_relationships and target_column and target_column in df.columns:
+                    logger.info(f"Generating visualizations for relationships with target: {target_column}")
+                    try:
+                        target_files = self._visualize_target_relationships(
+                            df_sampled, 
+                            target_column, 
+                            figures_dir, 
+                            categorical_threshold
+                        )
+                        generated_files.extend(target_files)
+                        logger.info(f"Generated {len(target_files)} target relationship visualizations")
+                    except Exception as e:
+                        logger.error(f"Error generating target relationship visualizations: {str(e)}")
+                        logger.debug(traceback.format_exc())
                 
+                # Perform time series analysis if requested and datetime columns exist
+                if time_series_analysis and datetime_cols:
+                    logger.info(f"Performing time series analysis on columns: {datetime_cols}")
+                    try:
+                        time_series_files = self._time_series_analysis(df, datetime_cols, figures_dir)
+                        generated_files.extend(time_series_files)
+                        logger.info(f"Generated {len(time_series_files)} time series visualizations")
+                    except Exception as e:
+                        logger.error(f"Error generating time series visualizations: {str(e)}")
+                        logger.debug(traceback.format_exc())
+            
             # Detect outliers
             outlier_info = None
             if detect_outliers and numeric_cols:
-                self._log(log_file, "Detecting outliers in numerical columns...")
-                outlier_info = self._detect_outliers(df, numeric_cols)
-                outlier_path = os.path.join(output_dir, "outliers.json")
-                with open(outlier_path, 'w') as f:
-                    json.dump(outlier_info, f, indent=2, default=str)
-                
-                # Visualize outliers only if visualizations are enabled
-                if visualize_distributions:
-                    outlier_files = self._visualize_outliers(df_sampled, numeric_cols, figures_dir)
-                    generated_files.extend(outlier_files)
-                
+                logger.info("Detecting outliers in numerical columns...")
+                try:
+                    outlier_info = self._detect_outliers(df, numeric_cols)
+                    outlier_path = os.path.join(output_dir, "outliers.json")
+                    with open(outlier_path, 'w') as f:
+                        json.dump(outlier_info, f, indent=2, default=str)
+                    logger.info(f"Outlier information saved to {outlier_path}")
+                    
+                    # Visualize outliers only if visualizations are enabled
+                    if create_figures and visualize_distributions:
+                        outlier_files = self._visualize_outliers(df_sampled, numeric_cols, figures_dir)
+                        generated_files.extend(outlier_files)
+                        logger.info(f"Generated {len(outlier_files)} outlier visualizations")
+                except Exception as e:
+                    logger.error(f"Error in outlier detection: {str(e)}")
+                    logger.debug(traceback.format_exc())
+            
             # Create summary report
             report_path = None
             if create_summary_report:
-                self._log(log_file, "Creating summary report...")
-                report_path = self._create_summary_report(df, profile_results, outlier_info, 
-                                                        generated_files, output_dir)
+                logger.info("Creating summary report...")
+                try:
+                    report_path = self._create_summary_report(
+                        df, 
+                        profile_results, 
+                        outlier_info, 
+                        generated_files, 
+                        output_dir,
+                        column_types
+                    )
+                    logger.info(f"Summary report saved to {report_path}")
+                except Exception as e:
+                    logger.error(f"Error creating summary report: {str(e)}")
+                    logger.debug(traceback.format_exc())
             
-            self._log(log_file, "EDA completed successfully.")
+            logger.info("EDA completed successfully.")
             
             return {
                 "status": "success",
@@ -1115,24 +1414,98 @@ class ExploratoryDataAnalysisTool(Tool):
                 "profile_path": profile_path,
                 "summary_stats_path": summary_stats_path,
                 "generated_files": generated_files,
-                "report_path": report_path if create_summary_report else None,
+                "report_path": report_path,
                 "row_count": original_row_count,
                 "column_count": len(df.columns) + len(excluded_columns),
                 "numeric_columns": numeric_cols,
                 "categorical_columns": categorical_cols,
                 "datetime_columns": datetime_cols,
-                "has_missing_data": df.isna().any().any()
+                "has_missing_data": df.isna().any().any(),
+                "log_file": log_file
             }
             
         except Exception as e:
-            self._log(log_file, f"Error: {str(e)}")
+            error_msg = str(e)
+            if logger:
+                logger.error(f"Error during EDA: {error_msg}")
+                logger.debug(traceback.format_exc())
+            
             return {
                 "status": "error",
-                "error_message": str(e),
+                "error_message": error_msg,
                 "input_path": input_path,
-                "output_dir": output_dir
+                "output_dir": output_dir,
+                "log_file": log_file
             }
     
+    def _setup_logging(self):
+        """Set up logging for the tool"""
+        logger = logging.getLogger('eda_tool')
+        logger.setLevel(logging.INFO)
+        
+        # Clear any existing handlers
+        if logger.handlers:
+            logger.handlers.clear()
+            
+        # Add console handler
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s'))
+        logger.addHandler(console_handler)
+        
+        return logger
+    
+    def _validate_inputs(
+        self, 
+        input_path, 
+        output_dir, 
+        correlation_method,
+        categorical_threshold,
+        max_categories_pie,
+        sample_size,
+        max_columns_for_correlation,
+        max_columns_for_pairplot
+    ):
+        """Validate input parameters"""
+        # Check if input file exists
+        if not os.path.exists(input_path):
+            raise EDAToolException(f"Input file not found: {input_path}")
+            
+        # Check if input file is a file
+        if not os.path.isfile(input_path):
+            raise EDAToolException(f"Input path is not a file: {input_path}")
+            
+        # Validate correlation method
+        if correlation_method not in self.VALID_CORRELATION_METHODS:
+            raise EDAToolException(
+                f"Invalid correlation method: {correlation_method}. "
+                f"Valid methods are: {', '.join(self.VALID_CORRELATION_METHODS)}"
+            )
+            
+        # Validate numeric parameters
+        if categorical_threshold is not None and categorical_threshold < 1:
+            raise EDAToolException(f"categorical_threshold must be at least 1, got {categorical_threshold}")
+            
+        if max_categories_pie is not None and max_categories_pie < 1:
+            raise EDAToolException(f"max_categories_pie must be at least 1, got {max_categories_pie}")
+            
+        if sample_size is not None and sample_size < 1:
+            raise EDAToolException(f"sample_size must be at least 1, got {sample_size}")
+            
+        if max_columns_for_correlation is not None and max_columns_for_correlation < 2:
+            raise EDAToolException(f"max_columns_for_correlation must be at least 2, got {max_columns_for_correlation}")
+            
+        if max_columns_for_pairplot is not None and max_columns_for_pairplot < 2:
+            raise EDAToolException(f"max_columns_for_pairplot must be at least 2, got {max_columns_for_pairplot}")
+    
+    def _sanitize_filename(self, name):
+        """
+        Sanitize a string to be used as a valid filename.
+        Replaces invalid characters with underscores.
+        """
+        # Pattern of invalid characters in filenames
+        invalid_chars = r'[<>:"/\\|?*\s]'
+        return re.sub(invalid_chars, '_', str(name))
+        
     def _load_data(self, input_path: str, sheet_name: Optional[str] = None) -> pd.DataFrame:
         """
         Load data from CSV or Excel file.
@@ -1144,46 +1517,146 @@ class ExploratoryDataAnalysisTool(Tool):
         Returns:
             Pandas DataFrame containing the data
         """
-        if not os.path.exists(input_path):
-            raise EDAToolException(f"Input file not found: {input_path}")
-        
         file_extension = os.path.splitext(input_path)[1].lower()
         
         try:
+            # Handle CSV files
             if file_extension in ['.csv', '.txt']:
-                # Try different encodings and delimiters for CSV
+                # Try UTF-8 encoding first
                 try:
                     df = pd.read_csv(input_path)
-                except:
+                except UnicodeDecodeError:
+                    # Try Latin-1 encoding if UTF-8 fails
+                    df = pd.read_csv(input_path, encoding='latin1')
+                except pd.errors.ParserError:
+                    # Try with different separator
                     try:
                         df = pd.read_csv(input_path, sep=';')
-                    except:
-                        try:
-                            df = pd.read_csv(input_path, encoding='latin1')
-                        except:
-                            df = pd.read_csv(input_path, encoding='latin1', sep=';')
+                    except UnicodeDecodeError:
+                        df = pd.read_csv(input_path, sep=';', encoding='latin1')
             
+            # Handle Excel files
             elif file_extension in ['.xlsx', '.xls']:
-                if sheet_name:
-                    df = pd.read_excel(input_path, sheet_name=sheet_name)
-                else:
-                    df = pd.read_excel(input_path)
+                try:
+                    if sheet_name:
+                        df = pd.read_excel(input_path, sheet_name=sheet_name)
+                    else:
+                        df = pd.read_excel(input_path)
+                except Exception as e:
+                    raise EDAToolException(f"Error reading Excel file: {str(e)}")
             else:
+                # Unsupported file format
                 raise EDAToolException(f"Unsupported file format: {file_extension}")
             
             # Convert date columns to datetime
             for col in df.columns:
-                if df[col].dtype == 'object':
+                # Only try conversion for object dtype columns with reasonable number of values
+                if df[col].dtype == 'object' and df[col].nunique() < len(df) / 2:
                     try:
-                        pd.to_datetime(df[col], errors='raise')
-                        df[col] = pd.to_datetime(df[col])
-                    except:
+                        # Use pandas datetime conversion with coercion to safely convert dates
+                        date_series = pd.to_datetime(df[col], errors='coerce')
+                        # Only convert if more than 90% of values could be converted successfully
+                        if date_series.notna().mean() > 0.9:
+                            df[col] = date_series
+                    except (ValueError, TypeError):
+                        # Keep original if conversion fails
                         pass
             
             return df
         
         except Exception as e:
-            raise EDAToolException(f"Error loading data: {str(e)}")
+            if isinstance(e, EDAToolException):
+                raise
+            else:
+                raise EDAToolException(f"Error loading data: {str(e)}")
+    
+    def _create_data_summary(self, df: pd.DataFrame, output_dir: str, categorical_threshold: int) -> str:
+        """
+        Create and save a summary of the dataset.
+        
+        Args:
+            df: DataFrame to summarize
+            output_dir: Directory to save summary
+            categorical_threshold: Max unique values to consider a column categorical
+            
+        Returns:
+            Path to the summary file
+        """
+        summary_stats_path = os.path.join(output_dir, "summary_statistics.txt")
+        
+        with open(summary_stats_path, 'w') as f:
+            f.write("=== DATA SUMMARY ===\n\n")
+            f.write(f"Total rows: {len(df)}\n")
+            f.write(f"Total columns: {len(df.columns)}\n\n")
+            
+            f.write("=== COLUMN INFORMATION ===\n\n")
+            for col in df.columns:
+                f.write(f"Column: {col}\n")
+                f.write(f"  Type: {df[col].dtype}\n")
+                f.write(f"  Missing values: {df[col].isna().sum()} ({(df[col].isna().sum() / len(df)) * 100:.2f}%)\n")
+                
+                if is_numeric_dtype(df[col]):
+                    try:
+                        f.write(f"  Min: {df[col].min()}\n")
+                        f.write(f"  Max: {df[col].max()}\n")
+                        f.write(f"  Mean: {df[col].mean()}\n")
+                        f.write(f"  Median: {df[col].median()}\n")
+                        f.write(f"  Std: {df[col].std()}\n")
+                    except (TypeError, ValueError) as e:
+                        f.write(f"  Error calculating statistics: {str(e)}\n")
+                
+                unique_count = df[col].nunique()
+                f.write(f"  Unique values: {unique_count}\n")
+                
+                if unique_count <= categorical_threshold or is_categorical_dtype(df[col]):
+                    f.write("  Value counts:\n")
+                    value_counts = df[col].value_counts().head(10)
+                    for val, count in value_counts.items():
+                        val_str = str(val)
+                        if len(val_str) > 50:  # Truncate long string values
+                            val_str = val_str[:47] + "..."
+                        f.write(f"    {val_str}: {count} ({(count / len(df)) * 100:.2f}%)\n")
+                    if unique_count > 10:
+                        f.write(f"    ... and {unique_count - 10} more values\n")
+                
+                f.write("\n")
+        
+        return summary_stats_path
+    
+    def _detect_column_types(self, df: pd.DataFrame, categorical_threshold: int) -> Dict[str, List[str]]:
+        """
+        Detect the types of columns in the DataFrame.
+        
+        Args:
+            df: DataFrame to analyze
+            categorical_threshold: Max unique values to consider a column categorical
+            
+        Returns:
+            Dictionary containing lists of column names by type
+        """
+        numeric_cols = []
+        categorical_cols = []
+        datetime_cols = []
+        
+        for col in df.columns:
+            # Check if datetime
+            if is_datetime64_any_dtype(df[col]):
+                datetime_cols.append(col)
+            # Check if numeric
+            elif is_numeric_dtype(df[col]):
+                # Numeric columns with few unique values are also considered categorical
+                if df[col].nunique() <= categorical_threshold:
+                    categorical_cols.append(col)
+                numeric_cols.append(col)
+            # Not numeric or datetime, must be categorical
+            else:
+                categorical_cols.append(col)
+        
+        return {
+            'numeric': numeric_cols,
+            'categorical': categorical_cols,
+            'datetime': datetime_cols
+        }
     
     def _profile_data(self, df: pd.DataFrame) -> Dict:
         """
@@ -1198,47 +1671,72 @@ class ExploratoryDataAnalysisTool(Tool):
         profile = {
             "row_count": len(df),
             "column_count": len(df.columns),
-            "memory_usage": df.memory_usage(deep=True).sum(),
+            "memory_usage": int(df.memory_usage(deep=True).sum()),
             "duplicated_rows": int(df.duplicated().sum()),
             "columns": {},
             "missing_data": {
                 "total_missing_cells": int(df.isna().sum().sum()),
                 "total_cells": df.size,
-                "missing_percentage": float((df.isna().sum().sum() / df.size) * 100)
+                "missing_percentage": float((df.isna().sum().sum() / df.size) * 100) if df.size > 0 else 0.0
             }
         }
         
         for col in df.columns:
-            col_profile = {
-                "dtype": str(df[col].dtype),
-                "is_numeric": is_numeric_dtype(df[col]),
-                "missing_count": int(df[col].isna().sum()),
-                "missing_percentage": float((df[col].isna().sum() / len(df)) * 100),
-                "unique_count": int(df[col].nunique())
-            }
+            try:
+                col_profile = {
+                    "dtype": str(df[col].dtype),
+                    "is_numeric": is_numeric_dtype(df[col]),
+                    "missing_count": int(df[col].isna().sum()),
+                    "missing_percentage": float((df[col].isna().sum() / len(df)) * 100) if len(df) > 0 else 0.0,
+                    "unique_count": int(df[col].nunique())
+                }
+                
+                if is_numeric_dtype(df[col]):
+                    # Handle numeric statistics, safely handling NaN values
+                    col_min = df[col].min() if not df[col].isna().all() else None
+                    col_max = df[col].max() if not df[col].isna().all() else None
+                    col_mean = df[col].mean() if not df[col].isna().all() else None
+                    col_median = df[col].median() if not df[col].isna().all() else None
+                    col_std = df[col].std() if not df[col].isna().all() else None
+                    
+                    # Only calculate skewness and kurtosis for columns with sufficient non-null values
+                    has_valid_stats = not df[col].isna().all() and len(df[col].dropna()) > 3
+                    col_skew = float(df[col].skew()) if has_valid_stats else None
+                    col_kurt = float(df[col].kurtosis()) if has_valid_stats else None
+                    
+                    col_profile.update({
+                        "min": float(col_min) if col_min is not None and not pd.isna(col_min) else None,
+                        "max": float(col_max) if col_max is not None and not pd.isna(col_max) else None,
+                        "mean": float(col_mean) if col_mean is not None and not pd.isna(col_mean) else None,
+                        "median": float(col_median) if col_median is not None and not pd.isna(col_median) else None,
+                        "std": float(col_std) if col_std is not None and not pd.isna(col_std) else None,
+                        "skewness": col_skew,
+                        "kurtosis": col_kurt
+                    })
+                
+                # For categorical or low-cardinality columns, include value counts
+                if col_profile["unique_count"] <= 20 or not col_profile["is_numeric"]:
+                    value_counts = df[col].value_counts().head(20).to_dict()
+                    col_profile["value_counts"] = {str(k): int(v) for k, v in value_counts.items()}
+                
+                profile["columns"][col] = col_profile
             
-            if is_numeric_dtype(df[col]):
-                col_profile.update({
-                    "min": float(df[col].min()) if not pd.isna(df[col].min()) else None,
-                    "max": float(df[col].max()) if not pd.isna(df[col].max()) else None,
-                    "mean": float(df[col].mean()) if not pd.isna(df[col].mean()) else None,
-                    "median": float(df[col].median()) if not pd.isna(df[col].median()) else None,
-                    "std": float(df[col].std()) if not pd.isna(df[col].std()) else None,
-                    "skewness": float(df[col].skew()) if not pd.isna(df[col].skew()) else None,
-                    "kurtosis": float(df[col].kurtosis()) if not pd.isna(df[col].kurtosis()) else None
-                })
-            
-            # For categorical or low-cardinality columns, include value counts
-            if col_profile["unique_count"] <= 20 or not col_profile["is_numeric"]:
-                value_counts = df[col].value_counts().head(20).to_dict()
-                col_profile["value_counts"] = {str(k): int(v) for k, v in value_counts.items()}
-            
-            profile["columns"][col] = col_profile
+            except Exception as e:
+                # If there's an error profiling a column, include error info but continue
+                profile["columns"][col] = {
+                    "dtype": str(df[col].dtype),
+                    "error": f"Error profiling column: {str(e)}"
+                }
         
         return profile
     
-    def _visualize_distributions(self, df: pd.DataFrame, output_dir: str, 
-                               categorical_threshold: int, max_categories_pie: int) -> List[str]:
+    def _visualize_distributions(
+        self, 
+        df: pd.DataFrame, 
+        output_dir: str, 
+        categorical_threshold: int, 
+        max_categories_pie: int
+    ) -> List[str]:
         """
         Create visualizations for the distributions of each column.
         
@@ -1259,102 +1757,153 @@ class ExploratoryDataAnalysisTool(Tool):
         # Histograms for numeric columns
         if numeric_cols:
             for col in numeric_cols:
-                plt.figure(figsize=(12, 6))
-                
-                # Histogram with KDE
-                sns.histplot(df[col].dropna(), kde=True)
-                plt.title(f'Distribution of {col}')
-                plt.xlabel(col)
-                plt.ylabel('Frequency')
-                plt.grid(True, alpha=0.3)
-                
-                # Add basic statistics as text
-                if len(df[col].dropna()) > 0:
-                    stats_text = (
-                        f"Mean: {df[col].mean():.2f}\n"
-                        f"Median: {df[col].median():.2f}\n"
-                        f"Std Dev: {df[col].std():.2f}\n"
-                        f"Min: {df[col].min():.2f}\n"
-                        f"Max: {df[col].max():.2f}"
-                    )
-                    plt.annotate(stats_text, xy=(0.95, 0.95), xycoords='axes fraction',
-                                bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=0.8),
-                                va='top', ha='right')
-                
-                file_path = os.path.join(output_dir, f"dist_{col.replace(' ', '_')}.png")
-                plt.tight_layout()
-                plt.savefig(file_path)
-                plt.close()
-                generated_files.append(file_path)
-                
-                # Box plot
-                plt.figure(figsize=(12, 6))
-                sns.boxplot(x=df[col].dropna())
-                plt.title(f'Box Plot of {col}')
-                plt.xlabel(col)
-                plt.grid(True, alpha=0.3)
-                
-                file_path = os.path.join(output_dir, f"boxplot_{col.replace(' ', '_')}.png")
-                plt.tight_layout()
-                plt.savefig(file_path)
-                plt.close()
-                generated_files.append(file_path)
+                # Skip columns with all NaN values
+                if df[col].isna().all():
+                    continue
+                    
+                try:
+                    plt.figure(figsize=(12, 6))
+                    
+                    # Histogram with KDE
+                    sns.histplot(df[col].dropna(), kde=True)
+                    plt.title(f'Distribution of {col}')
+                    plt.xlabel(col)
+                    plt.ylabel('Frequency')
+                    plt.grid(True, alpha=0.3)
+                    
+                    # Add basic statistics as text
+                    if len(df[col].dropna()) > 0:
+                        try:
+                            stats_text = (
+                                f"Mean: {df[col].mean():.2f}\n"
+                                f"Median: {df[col].median():.2f}\n"
+                                f"Std Dev: {df[col].std():.2f}\n"
+                                f"Min: {df[col].min():.2f}\n"
+                                f"Max: {df[col].max():.2f}"
+                            )
+                            plt.annotate(stats_text, xy=(0.95, 0.95), xycoords='axes fraction',
+                                        bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=0.8),
+                                        va='top', ha='right')
+                        except (ValueError, TypeError):
+                            # Skip stats annotation if there's an error calculating statistics
+                            pass
+                    
+                    safe_col_name = self._sanitize_filename(col)
+                    file_path = os.path.join(output_dir, f"dist_{safe_col_name}.png")
+                    plt.tight_layout()
+                    plt.savefig(file_path)
+                    plt.close()
+                    generated_files.append(file_path)
+                    
+                    # Box plot
+                    plt.figure(figsize=(12, 6))
+                    sns.boxplot(x=df[col].dropna())
+                    plt.title(f'Box Plot of {col}')
+                    plt.xlabel(col)
+                    plt.grid(True, alpha=0.3)
+                    
+                    file_path = os.path.join(output_dir, f"boxplot_{safe_col_name}.png")
+                    plt.tight_layout()
+                    plt.savefig(file_path)
+                    plt.close()
+                    generated_files.append(file_path)
+                except Exception as e:
+                    logging.warning(f"Error creating distribution plots for column {col}: {str(e)}")
         
         # Bar charts or pie charts for categorical columns
         for col in df.columns:
+            # Skip if it's a numeric column above categorical threshold
             if col in numeric_cols and df[col].nunique() > categorical_threshold:
                 continue
                 
-            value_counts = df[col].value_counts()
-            if len(value_counts) <= max_categories_pie:
-                # Pie chart for fewer categories
-                plt.figure(figsize=(12, 8))
-                plt.pie(value_counts, labels=value_counts.index, autopct='%1.1f%%', 
-                      startangle=90, shadow=True)
-                plt.axis('equal')
-                plt.title(f'Distribution of {col}')
+            # Skip if all values are NaN
+            if df[col].isna().all():
+                continue
                 
-                file_path = os.path.join(output_dir, f"pie_{col.replace(' ', '_')}.png")
-                plt.tight_layout()
-                plt.savefig(file_path)
-                plt.close()
-                generated_files.append(file_path)
-            else:
-                # Bar chart for more categories (limit to top categories)
-                plt.figure(figsize=(14, 8))
-                top_categories = value_counts.head(max_categories_pie)
-                sns.barplot(x=top_categories.index, y=top_categories.values)
-                plt.title(f'Top {max_categories_pie} Categories of {col}')
-                plt.xlabel(col)
-                plt.ylabel('Count')
-                plt.xticks(rotation=45, ha='right')
+            try:
+                value_counts = df[col].value_counts()
                 
-                file_path = os.path.join(output_dir, f"bar_{col.replace(' ', '_')}.png")
-                plt.tight_layout()
-                plt.savefig(file_path)
-                plt.close()
-                generated_files.append(file_path)
+                # Skip columns with too many unique values
+                if len(value_counts) > 100:
+                    continue
+                    
+                safe_col_name = self._sanitize_filename(col)
+                
+                if len(value_counts) <= max_categories_pie:
+                    # Pie chart for fewer categories
+                    plt.figure(figsize=(12, 8))
+                    
+                    # Convert value_counts labels to strings for consistent display
+                    plt.pie(
+                        value_counts, 
+                        labels=[str(x)[:20] + '...' if len(str(x)) > 20 else str(x) for x in value_counts.index], 
+                        autopct='%1.1f%%', 
+                        startangle=90, 
+                        shadow=True
+                    )
+                    plt.axis('equal')
+                    plt.title(f'Distribution of {col}')
+                    
+                    file_path = os.path.join(output_dir, f"pie_{safe_col_name}.png")
+                    plt.tight_layout()
+                    plt.savefig(file_path)
+                    plt.close()
+                    generated_files.append(file_path)
+                else:
+                    # Bar chart for more categories (limit to top categories)
+                    plt.figure(figsize=(14, 8))
+                    top_categories = value_counts.head(max_categories_pie)
+                    
+                    # Convert index to string to handle mixed types
+                    top_categories.index = [str(x) for x in top_categories.index]
+                    
+                    # Create bar plot
+                    sns.barplot(x=top_categories.index, y=top_categories.values)
+                    plt.title(f'Top {max_categories_pie} Categories of {col}')
+                    plt.xlabel(col)
+                    plt.ylabel('Count')
+                    plt.xticks(rotation=45, ha='right')
+                    
+                    file_path = os.path.join(output_dir, f"bar_{safe_col_name}.png")
+                    plt.tight_layout()
+                    plt.savefig(file_path)
+                    plt.close()
+                    generated_files.append(file_path)
+            except Exception as e:
+                logging.warning(f"Error creating categorical plots for column {col}: {str(e)}")
                 
         # Missing values visualization
         missing_data = df.isna().sum()
         if missing_data.sum() > 0:
-            plt.figure(figsize=(14, 8))
-            sns.barplot(x=missing_data.index, y=missing_data.values)
-            plt.title('Missing Values by Column')
-            plt.xlabel('Column')
-            plt.ylabel('Missing Values Count')
-            plt.xticks(rotation=45, ha='right')
-            
-            file_path = os.path.join(output_dir, "missing_values.png")
-            plt.tight_layout()
-            plt.savefig(file_path)
-            plt.close()
-            generated_files.append(file_path)
+            try:
+                plt.figure(figsize=(14, 8))
+                
+                # Only plot columns with missing values
+                missing_cols = missing_data[missing_data > 0]
+                
+                # Create the barplot, with column names converted to strings
+                sns.barplot(x=missing_cols.index.astype(str), y=missing_cols.values)
+                plt.title('Missing Values by Column')
+                plt.xlabel('Column')
+                plt.ylabel('Missing Values Count')
+                plt.xticks(rotation=45, ha='right')
+                
+                file_path = os.path.join(output_dir, "missing_values.png")
+                plt.tight_layout()
+                plt.savefig(file_path)
+                plt.close()
+                generated_files.append(file_path)
+            except Exception as e:
+                logging.warning(f"Error creating missing values plot: {str(e)}")
         
         return generated_files
     
-    def _visualize_correlations(self, df: pd.DataFrame, output_dir: str, 
-                              correlation_method: str) -> str:
+    def _visualize_correlations(
+        self, 
+        df: pd.DataFrame, 
+        output_dir: str, 
+        correlation_method: str
+    ) -> Union[str, List[str]]:
         """
         Create correlation heatmap.
         
@@ -1364,74 +1913,84 @@ class ExploratoryDataAnalysisTool(Tool):
             correlation_method: Method for correlation calculation
             
         Returns:
-            Path to the generated correlation heatmap file
+            Path to the generated correlation heatmap file or list of paths
         """
         # Get only numeric columns for correlation
         numeric_df = df.select_dtypes(include=['number'])
         
+        # Need at least 2 columns for correlation
         if numeric_df.shape[1] < 2:
+            logging.warning("Not enough numeric columns for correlation analysis")
             return None
             
         # If we have too many columns, limit to the most relevant ones
         if numeric_df.shape[1] > 100:
-            # Log warning about limiting columns
-            print(f"Warning: Too many numeric columns ({numeric_df.shape[1]}) for correlation visualization. Limiting to top 100.")
+            logging.info(f"Too many numeric columns ({numeric_df.shape[1]}) for correlation visualization. Limiting to top 100.")
             
-            # One approach: Use columns with most non-null values
+            # Use columns with most non-null values
             non_null_counts = numeric_df.count()
             top_cols = non_null_counts.nlargest(100).index.tolist()
             numeric_df = numeric_df[top_cols]
         
-        # Calculate correlation matrix
-        corr_matrix = numeric_df.corr(method=correlation_method)
-        
-        # For large correlation matrices, break into chunks
-        if numeric_df.shape[1] > 50:
-            # Split into chunks of 50 columns max
-            chunk_size = 50
-            chunks = []
+        try:
+            # Calculate correlation matrix
+            corr_matrix = numeric_df.corr(method=correlation_method)
             
-            for i in range(0, len(corr_matrix.columns), chunk_size):
-                chunk_cols = corr_matrix.columns[i:i+chunk_size]
-                chunks.append(corr_matrix.loc[chunk_cols, chunk_cols])
-            
-            # Create correlation heatmaps for each chunk
-            file_paths = []
-            for i, chunk in enumerate(chunks):
-                plt.figure(figsize=(20, 16))
-                mask = np.triu(np.ones_like(chunk, dtype=bool))
+            # For large correlation matrices, break into chunks
+            if numeric_df.shape[1] > 50:
+                # Split into chunks of 50 columns max
+                chunk_size = 50
+                chunks = []
+                
+                for i in range(0, len(corr_matrix.columns), chunk_size):
+                    chunk_cols = corr_matrix.columns[i:i+chunk_size]
+                    chunks.append(corr_matrix.loc[chunk_cols, chunk_cols])
+                
+                # Create correlation heatmaps for each chunk
+                file_paths = []
+                for i, chunk in enumerate(chunks):
+                    plt.figure(figsize=(20, 16))
+                    mask = np.triu(np.ones_like(chunk, dtype=bool))
+                    cmap = sns.diverging_palette(230, 20, as_cmap=True)
+                    
+                    sns.heatmap(chunk, mask=mask, cmap=cmap, vmax=1, vmin=-1, center=0,
+                              annot=True, fmt=".2f", square=True, linewidths=.5, cbar_kws={"shrink": .5})
+                    
+                    plt.title(f'Correlation Matrix ({correlation_method.capitalize()}) - Part {i+1}')
+                    file_path = os.path.join(output_dir, f"correlation_{correlation_method}_part{i+1}.png")
+                    plt.tight_layout()
+                    plt.savefig(file_path)
+                    plt.close()
+                    file_paths.append(file_path)
+                
+                return file_paths
+            else:
+                # For smaller correlation matrices
+                plt.figure(figsize=(max(12, len(numeric_df.columns)), max(10, len(numeric_df.columns))))
+                mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
                 cmap = sns.diverging_palette(230, 20, as_cmap=True)
                 
-                sns.heatmap(chunk, mask=mask, cmap=cmap, vmax=1, vmin=-1, center=0,
+                sns.heatmap(corr_matrix, mask=mask, cmap=cmap, vmax=1, vmin=-1, center=0,
                           annot=True, fmt=".2f", square=True, linewidths=.5, cbar_kws={"shrink": .5})
                 
-                plt.title(f'Correlation Matrix ({correlation_method.capitalize()}) - Part {i+1}')
-                file_path = os.path.join(output_dir, f"correlation_{correlation_method}_part{i+1}.png")
+                plt.title(f'Correlation Matrix ({correlation_method.capitalize()})')
+                file_path = os.path.join(output_dir, f"correlation_{correlation_method}.png")
                 plt.tight_layout()
                 plt.savefig(file_path)
-                plt.close()
-                file_paths.append(file_path)
-            
-            return file_paths[0]  # Return first file path
-        else:
-            # Original code for smaller correlation matrices
-            plt.figure(figsize=(max(12, len(numeric_df.columns)), max(10, len(numeric_df.columns))))
-            mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
-            cmap = sns.diverging_palette(230, 20, as_cmap=True)
-            
-            sns.heatmap(corr_matrix, mask=mask, cmap=cmap, vmax=1, vmin=-1, center=0,
-                      annot=True, fmt=".2f", square=True, linewidths=.5, cbar_kws={"shrink": .5})
-            
-            plt.title(f'Correlation Matrix ({correlation_method.capitalize()})')
-            file_path = os.path.join(output_dir, f"correlation_{correlation_method}.png")
-            plt.tight_layout()
-            plt.savefig(file_path)
-            plt.close
-            
-            return file_path
+                plt.close()  # Fixed: Added parentheses to close the plot
+                
+                return file_path
+        except Exception as e:
+            logging.error(f"Error in correlation analysis: {str(e)}")
+            return None
     
-    def _visualize_pairplot(self, df: pd.DataFrame, numeric_cols: List[str], 
-                          output_dir: str, target_column: Optional[str] = None) -> str:
+    def _visualize_pairplot(
+        self, 
+        df: pd.DataFrame, 
+        numeric_cols: List[str], 
+        output_dir: str, 
+        target_column: Optional[str] = None
+    ) -> str:
         """
         Create pairplot for numerical columns.
         
@@ -1446,23 +2005,39 @@ class ExploratoryDataAnalysisTool(Tool):
         """
         # Limit the number of columns for pairplot to avoid performance issues
         if len(numeric_cols) > 10:
-            print(f"Warning: Too many numeric columns ({len(numeric_cols)}) for pairplot. Limiting to 10 columns.")
+            logging.info(f"Too many numeric columns ({len(numeric_cols)}) for pairplot. Limiting to 10 columns.")
             numeric_cols = numeric_cols[:10]
             
-        plot_df = df[numeric_cols].copy()
-        
-        # If target column exists and is categorical (for coloring)
-        hue = None
-        if target_column and target_column in df.columns:
-            if df[target_column].nunique() <= 10:  # Limit to reasonable number of categories
-                plot_df[target_column] = df[target_column]
-                hue = target_column
-                
+        # Check if we have enough data
+        if not numeric_cols or len(df) < 2:
+            logging.warning("Not enough data for pairplot visualization")
+            return None
+            
+        # Prepare data for plotting, handling potential issues
         try:
+            plot_df = df[numeric_cols].copy()
+            
+            # Check for non-finite values and replace with NaN
+            for col in plot_df.columns:
+                if not np.isfinite(plot_df[col]).all():
+                    plot_df[col] = plot_df[col].replace([np.inf, -np.inf], np.nan)
+            
+            # If target column exists and is categorical (for coloring)
+            hue = None
+            if target_column and target_column in df.columns:
+                # Only use target for coloring if it has a reasonable number of categories
+                if df[target_column].nunique() <= 10:
+                    plot_df[target_column] = df[target_column]
+                    hue = target_column
+                
             # Create pairplot
-            plt.figure(figsize=(12, 10))
-            g = sns.pairplot(plot_df, hue=hue, diag_kind='kde', 
-                            plot_kws={'alpha': 0.6}, diag_kws={'alpha': 0.6})
+            g = sns.pairplot(
+                plot_df.dropna(), 
+                hue=hue, 
+                diag_kind='kde', 
+                plot_kws={'alpha': 0.6}, 
+                diag_kws={'alpha': 0.6}
+            )
             
             plt.suptitle('Pairplot of Numerical Features', y=1.02, fontsize=16)
             file_path = os.path.join(output_dir, "pairplot.png")
@@ -1471,12 +2046,20 @@ class ExploratoryDataAnalysisTool(Tool):
             
             return file_path
         except Exception as e:
-            print(f"Error creating pairplot: {str(e)}")
-            # Create alternative correlation plot if pairplot fails
-            return self._visualize_correlations(plot_df, output_dir, "pearson")
+            logging.error(f"Error creating pairplot: {str(e)}")
+            # Try to create a correlation heatmap as a fallback
+            try:
+                return self._visualize_correlations(df[numeric_cols], output_dir, "pearson")
+            except:
+                return None
     
-    def _visualize_target_relationships(self, df: pd.DataFrame, target_column: str,
-                                      output_dir: str, categorical_threshold: int) -> List[str]:
+    def _visualize_target_relationships(
+        self, 
+        df: pd.DataFrame, 
+        target_column: str,
+        output_dir: str, 
+        categorical_threshold: int
+    ) -> List[str]:
         """
         Create visualizations showing relationships between features and target.
         
@@ -1490,6 +2073,7 @@ class ExploratoryDataAnalysisTool(Tool):
             List of paths to generated visualization files
         """
         if target_column not in df.columns:
+            logging.warning(f"Target column '{target_column}' not found in dataframe")
             return []
             
         generated_files = []
@@ -1499,106 +2083,130 @@ class ExploratoryDataAnalysisTool(Tool):
         target_is_categorical = df[target_column].nunique() <= categorical_threshold or not is_numeric_dtype(df[target_column])
         
         for col in df.columns:
-            if col == target_column:
+            # Skip if column is the target or has all NaN values
+            if col == target_column or df[col].isna().all():
                 continue
+                
+            # Create a safe filename for the column
+            safe_col_name = self._sanitize_filename(col)
                 
             # Check if feature is categorical
             col_is_categorical = col not in numeric_cols or df[col].nunique() <= categorical_threshold
             
-            # Case 1: Categorical target vs. Numerical feature
-            if target_is_categorical and not col_is_categorical:
-                plt.figure(figsize=(14, 8))
-                sns.boxplot(x=target_column, y=col, data=df)
-                plt.title(f'Distribution of {col} by {target_column}')
-                plt.xticks(rotation=45, ha='right')
-                
-                file_path = os.path.join(output_dir, f"target_box_{col.replace(' ', '_')}.png")
-                plt.tight_layout()
-                plt.savefig(file_path)
-                plt.close()
-                generated_files.append(file_path)
-                
-                # Add violin plot for more detail
-                plt.figure(figsize=(14, 8))
-                sns.violinplot(x=target_column, y=col, data=df)
-                plt.title(f'Violin Plot of {col} by {target_column}')
-                plt.xticks(rotation=45, ha='right')
-                
-                file_path = os.path.join(output_dir, f"target_violin_{col.replace(' ', '_')}.png")
-                plt.tight_layout()
-                plt.savefig(file_path)
-                plt.close()
-                generated_files.append(file_path)
-                
-            # Case 2: Numerical target vs. Numerical feature
-            elif not target_is_categorical and not col_is_categorical:
-                plt.figure(figsize=(12, 8))
-                sns.scatterplot(x=col, y=target_column, data=df, alpha=0.6)
-                
-                # Add regression line
-                try:
-                    sns.regplot(x=col, y=target_column, data=df, scatter=False, line_kws={"color": "red"})
-                except:
-                    pass
+            try:
+                # Case 1: Categorical target vs. Numerical feature
+                if target_is_categorical and not col_is_categorical:
+                    plt.figure(figsize=(14, 8))
+                    try:
+                        # Convert target to string for consistent display
+                        sns.boxplot(x=df[target_column].astype(str), y=col, data=df)
+                        plt.title(f'Distribution of {col} by {target_column}')
+                        plt.xticks(rotation=45, ha='right')
+                        
+                        file_path = os.path.join(output_dir, f"target_box_{safe_col_name}.png")
+                        plt.tight_layout()
+                        plt.savefig(file_path)
+                        plt.close()
+                        generated_files.append(file_path)
+                        
+                        # Add violin plot for more detail
+                        plt.figure(figsize=(14, 8))
+                        sns.violinplot(x=df[target_column].astype(str), y=col, data=df)
+                        plt.title(f'Violin Plot of {col} by {target_column}')
+                        plt.xticks(rotation=45, ha='right')
+                        
+                        file_path = os.path.join(output_dir, f"target_violin_{safe_col_name}.png")
+                        plt.tight_layout()
+                        plt.savefig(file_path)
+                        plt.close()
+                        generated_files.append(file_path)
+                    except Exception as e:
+                        logging.warning(f"Error creating target relationship plots (case 1) for {col}: {str(e)}")
                     
-                plt.title(f'Relationship between {col} and {target_column}')
-                
-                file_path = os.path.join(output_dir, f"target_scatter_{col.replace(' ', '_')}.png")
-                plt.tight_layout()
-                plt.savefig(file_path)
-                plt.close()
-                generated_files.append(file_path)
-                
-            # Case 3: Categorical target vs. Categorical feature
-            elif target_is_categorical and col_is_categorical:
-                # Create grouped bar chart or heatmap
-                plt.figure(figsize=(14, 10))
-                
-                # Create a crosstab
-                cross_tab = pd.crosstab(df[col], df[target_column], normalize='index')
-                cross_tab.plot(kind='bar', stacked=True)
-                
-                plt.title(f'Relationship between {col} and {target_column}')
-                plt.xlabel(col)
-                plt.ylabel('Proportion')
-                plt.xticks(rotation=45, ha='right')
-                plt.legend(title=target_column)
-                
-                file_path = os.path.join(output_dir, f"target_bar_{col.replace(' ', '_')}.png")
-                plt.tight_layout()
-                plt.savefig(file_path)
-                plt.close()
-                generated_files.append(file_path)
-                
-                # Heatmap of association
-                plt.figure(figsize=(12, 8))
-                cross_tab_counts = pd.crosstab(df[col], df[target_column])
-                sns.heatmap(cross_tab_counts, annot=True, fmt='d', cmap='Blues')
-                plt.title(f'Heatmap of {col} vs {target_column}')
-                plt.tight_layout()
-                
-                file_path = os.path.join(output_dir, f"target_heatmap_{col.replace(' ', '_')}.png")
-                plt.savefig(file_path)
-                plt.close()
-                generated_files.append(file_path)
-                
-            # Case 4: Numerical target vs. Categorical feature
-            elif not target_is_categorical and col_is_categorical:
-                plt.figure(figsize=(14, 8))
-                sns.boxplot(x=col, y=target_column, data=df)
-                plt.title(f'Distribution of {target_column} by {col}')
-                plt.xticks(rotation=45, ha='right')
-                
-                file_path = os.path.join(output_dir, f"target_revbox_{col.replace(' ', '_')}.png")
-                plt.tight_layout()
-                plt.savefig(file_path)
-                plt.close()
-                generated_files.append(file_path)
+                # Case 2: Numerical target vs. Numerical feature
+                elif not target_is_categorical and not col_is_categorical:
+                    try:
+                        plt.figure(figsize=(12, 8))
+                        sns.scatterplot(x=col, y=target_column, data=df, alpha=0.6)
+                        
+                        # Add regression line
+                        try:
+                            sns.regplot(x=col, y=target_column, data=df, scatter=False, line_kws={"color": "red"})
+                        except:
+                            pass
+                            
+                        plt.title(f'Relationship between {col} and {target_column}')
+                        
+                        file_path = os.path.join(output_dir, f"target_scatter_{safe_col_name}.png")
+                        plt.tight_layout()
+                        plt.savefig(file_path)
+                        plt.close()
+                        generated_files.append(file_path)
+                    except Exception as e:
+                        logging.warning(f"Error creating target relationship plots (case 2) for {col}: {str(e)}")
+                    
+                # Case 3: Categorical target vs. Categorical feature
+                elif target_is_categorical and col_is_categorical:
+                    try:
+                        # Create grouped bar chart
+                        plt.figure(figsize=(14, 10))
+                        
+                        # Create a crosstab
+                        cross_tab = pd.crosstab(df[col], df[target_column], normalize='index')
+                        cross_tab.plot(kind='bar', stacked=True)
+                        
+                        plt.title(f'Relationship between {col} and {target_column}')
+                        plt.xlabel(col)
+                        plt.ylabel('Proportion')
+                        plt.xticks(rotation=45, ha='right')
+                        plt.legend(title=target_column)
+                        
+                        file_path = os.path.join(output_dir, f"target_bar_{safe_col_name}.png")
+                        plt.tight_layout()
+                        plt.savefig(file_path)
+                        plt.close()
+                        generated_files.append(file_path)
+                        
+                        # Heatmap of association
+                        plt.figure(figsize=(12, 8))
+                        cross_tab_counts = pd.crosstab(df[col], df[target_column])
+                        sns.heatmap(cross_tab_counts, annot=True, fmt='d', cmap='Blues')
+                        plt.title(f'Heatmap of {col} vs {target_column}')
+                        plt.tight_layout()
+                        
+                        file_path = os.path.join(output_dir, f"target_heatmap_{safe_col_name}.png")
+                        plt.savefig(file_path)
+                        plt.close()
+                        generated_files.append(file_path)
+                    except Exception as e:
+                        logging.warning(f"Error creating target relationship plots (case 3) for {col}: {str(e)}")
+                    
+                # Case 4: Numerical target vs. Categorical feature
+                elif not target_is_categorical and col_is_categorical:
+                    try:
+                        plt.figure(figsize=(14, 8))
+                        sns.boxplot(x=col, y=target_column, data=df)
+                        plt.title(f'Distribution of {target_column} by {col}')
+                        plt.xticks(rotation=45, ha='right')
+                        
+                        file_path = os.path.join(output_dir, f"target_revbox_{safe_col_name}.png")
+                        plt.tight_layout()
+                        plt.savefig(file_path)
+                        plt.close()
+                        generated_files.append(file_path)
+                    except Exception as e:
+                        logging.warning(f"Error creating target relationship plots (case 4) for {col}: {str(e)}")
+            except Exception as e:
+                logging.warning(f"Error processing target relationships for column {col}: {str(e)}")
         
         return generated_files
     
-    def _time_series_analysis(self, df: pd.DataFrame, datetime_cols: List[str], 
-                            output_dir: str) -> List[str]:
+    def _time_series_analysis(
+        self, 
+        df: pd.DataFrame, 
+        datetime_cols: List[str], 
+        output_dir: str
+    ) -> List[str]:
         """
         Perform time series analysis for datetime columns.
         
@@ -1618,63 +2226,86 @@ class ExploratoryDataAnalysisTool(Tool):
                 try:
                     df[date_col] = pd.to_datetime(df[date_col])
                 except:
+                    # Skip if conversion fails
                     continue
             
-            # Sort by date
-            df_sorted = df.sort_values(by=date_col)
-            
-            # Check if there are numeric columns to plot
-            numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-            
-            if not numeric_cols:
-                continue
+            try:
+                # Sort by date
+                df_sorted = df.sort_values(by=date_col)
                 
-            # For each numeric column, create time series plot
-            for num_col in numeric_cols[:5]:  # Limit to first 5 numeric columns
-                plt.figure(figsize=(16, 6))
+                # Check if there are numeric columns to plot
+                numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
                 
-                # Plot time series
-                plt.plot(df_sorted[date_col], df_sorted[num_col])
-                plt.title(f'Time Series of {num_col} by {date_col}')
-                plt.xlabel(date_col)
-                plt.ylabel(num_col)
-                plt.grid(True, alpha=0.3)
+                if not numeric_cols:
+                    continue
+                    
+                # Create a safe filename for the column
+                safe_date_col = self._sanitize_filename(date_col)
+                    
+                # For each numeric column, create time series plot
+                for num_col in numeric_cols[:5]:  # Limit to first 5 numeric columns
+                    safe_num_col = self._sanitize_filename(num_col)
+                    
+                    # Skip if all values are NaN
+                    if df[num_col].isna().all():
+                        continue
+                    
+                    plt.figure(figsize=(16, 6))
+                    
+                    try:
+                        # Plot time series
+                        plt.plot(df_sorted[date_col], df_sorted[num_col])
+                        plt.title(f'Time Series of {num_col} by {date_col}')
+                        plt.xlabel(date_col)
+                        plt.ylabel(num_col)
+                        plt.grid(True, alpha=0.3)
+                        
+                        # Format x-axis dates
+                        plt.gcf().autofmt_xdate()
+                        
+                        file_path = os.path.join(output_dir, f"timeseries_{safe_date_col}_{safe_num_col}.png")
+                        plt.tight_layout()
+                        plt.savefig(file_path)
+                        plt.close()
+                        generated_files.append(file_path)
+                    except Exception as e:
+                        logging.warning(f"Error creating time series plot for {num_col} by {date_col}: {str(e)}")
+                        plt.close()
                 
-                # Format x-axis dates
-                plt.gcf().autofmt_xdate()
-                
-                file_path = os.path.join(output_dir, f"timeseries_{date_col.replace(' ', '_')}_{num_col.replace(' ', '_')}.png")
-                plt.tight_layout()
-                plt.savefig(file_path)
-                plt.close()
-                generated_files.append(file_path)
-                
-            # Create count plot by time periods
-            plt.figure(figsize=(16, 6))
-            
-            # Extract date components and count by period
-            if len(df) > 1000:
-                # For large datasets, aggregate by month
-                date_counts = df[date_col].dt.to_period('M').value_counts().sort_index()
-                date_counts.index = date_counts.index.astype(str)
-            else:
-                # For smaller datasets, aggregate by day
-                date_counts = df[date_col].dt.date.value_counts().sort_index()
-            
-            plt.bar(date_counts.index, date_counts.values)
-            plt.title(f'Counts by {date_col}')
-            plt.xlabel(date_col)
-            plt.ylabel('Count')
-            plt.grid(True, alpha=0.3)
-            
-            # Format x-axis
-            plt.xticks(rotation=45, ha='right')
-            
-            file_path = os.path.join(output_dir, f"datecount_{date_col.replace(' ', '_')}.png")
-            plt.tight_layout()
-            plt.savefig(file_path)
-            plt.close()
-            generated_files.append(file_path)
+                # Create count plot by time periods
+                try:
+                    plt.figure(figsize=(16, 6))
+                    
+                    # Extract date components and count by period
+                    if len(df) > 1000:
+                        # For large datasets, aggregate by month
+                        date_counts = df[date_col].dt.to_period('M').value_counts().sort_index()
+                        date_counts.index = date_counts.index.astype(str)
+                    else:
+                        # For smaller datasets, aggregate by day
+                        date_counts = df[date_col].dt.date.value_counts().sort_index()
+                        # Convert index to strings
+                        date_counts.index = [str(d) for d in date_counts.index]
+                    
+                    plt.bar(date_counts.index, date_counts.values)
+                    plt.title(f'Counts by {date_col}')
+                    plt.xlabel(date_col)
+                    plt.ylabel('Count')
+                    plt.grid(True, alpha=0.3)
+                    
+                    # Format x-axis
+                    plt.xticks(rotation=45, ha='right')
+                    
+                    file_path = os.path.join(output_dir, f"datecount_{safe_date_col}.png")
+                    plt.tight_layout()
+                    plt.savefig(file_path)
+                    plt.close()
+                    generated_files.append(file_path)
+                except Exception as e:
+                    logging.warning(f"Error creating date count plot for {date_col}: {str(e)}")
+                    plt.close()
+            except Exception as e:
+                logging.warning(f"Error performing time series analysis for {date_col}: {str(e)}")
         
         return generated_files
     
@@ -1692,38 +2323,44 @@ class ExploratoryDataAnalysisTool(Tool):
         outlier_info = {}
         
         for col in numeric_cols:
-            # Skip columns with all NaN values
-            if df[col].isna().all():
+            # Skip columns with all NaN values or less than 10 non-null values
+            if df[col].isna().all() or df[col].count() < 10:
                 continue
                 
-            # Calculate IQR
-            Q1 = df[col].quantile(0.25)
-            Q3 = df[col].quantile(0.75)
-            IQR = Q3 - Q1
-            
-            # Define outlier bounds
-            lower_bound = Q1 - 1.5 * IQR
-            upper_bound = Q3 + 1.5 * IQR
-            
-            # Find outliers
-            outliers = df[(df[col] < lower_bound) | (df[col] > upper_bound)][col]
-            
-            outlier_info[col] = {
-                "Q1": float(Q1),
-                "Q3": float(Q3),
-                "IQR": float(IQR),
-                "lower_bound": float(lower_bound),
-                "upper_bound": float(upper_bound),
-                "outlier_count": int(len(outliers)),
-                "outlier_percentage": float((len(outliers) / df[col].count()) * 100),
-                "min_outlier": float(outliers.min()) if not outliers.empty else None,
-                "max_outlier": float(outliers.max()) if not outliers.empty else None
-            }
+            try:
+                # Calculate IQR
+                Q1 = df[col].quantile(0.25)
+                Q3 = df[col].quantile(0.75)
+                IQR = Q3 - Q1
+                
+                # Define outlier bounds
+                lower_bound = Q1 - 1.5 * IQR
+                upper_bound = Q3 + 1.5 * IQR
+                
+                # Find outliers
+                outliers = df[(df[col] < lower_bound) | (df[col] > upper_bound)][col]
+                
+                # Calculate outlier statistics
+                outlier_count = len(outliers)
+                outlier_percentage = (outlier_count / df[col].count()) * 100 if df[col].count() > 0 else 0
+                
+                outlier_info[col] = {
+                    "Q1": float(Q1),
+                    "Q3": float(Q3),
+                    "IQR": float(IQR),
+                    "lower_bound": float(lower_bound),
+                    "upper_bound": float(upper_bound),
+                    "outlier_count": int(outlier_count),
+                    "outlier_percentage": float(outlier_percentage),
+                    "min_outlier": float(outliers.min()) if not outliers.empty else None,
+                    "max_outlier": float(outliers.max()) if not outliers.empty else None
+                }
+            except Exception as e:
+                logging.warning(f"Error detecting outliers for column {col}: {str(e)}")
             
         return outlier_info
     
-    def _visualize_outliers(self, df: pd.DataFrame, numeric_cols: List[str], 
-                          output_dir: str) -> List[str]:
+    def _visualize_outliers(self, df: pd.DataFrame, numeric_cols: List[str], output_dir: str) -> List[str]:
         """
         Create visualizations for outlier detection.
         
@@ -1738,34 +2375,44 @@ class ExploratoryDataAnalysisTool(Tool):
         generated_files = []
         
         for col in numeric_cols:
-            # Skip columns with all NaN values
-            if df[col].isna().all():
+            # Skip columns with all NaN values or less than 10 non-null values
+            if df[col].isna().all() or df[col].count() < 10:
                 continue
                 
-            # Create a subplot with 1 row and 2 columns
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 6))
-            
-            # Box plot for outlier visualization
-            sns.boxplot(x=df[col], ax=ax1)
-            ax1.set_title(f'Box Plot with Outliers: {col}')
-            ax1.grid(True, alpha=0.3)
-            
-            # Histogram with KDE for distribution with outliers
-            sns.histplot(df[col].dropna(), kde=True, ax=ax2)
-            ax2.set_title(f'Distribution with Outliers: {col}')
-            ax2.grid(True, alpha=0.3)
-            
-            plt.tight_layout()
-            file_path = os.path.join(output_dir, f"outliers_{col.replace(' ', '_')}.png")
-            plt.savefig(file_path)
-            plt.close(fig)  # Close the figure explicitly
-            generated_files.append(file_path)
+            try:
+                # Create a subplot with 1 row and 2 columns
+                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 6))
+                
+                # Box plot for outlier visualization
+                sns.boxplot(x=df[col], ax=ax1)
+                ax1.set_title(f'Box Plot with Outliers: {col}')
+                ax1.grid(True, alpha=0.3)
+                
+                # Histogram with KDE for distribution with outliers
+                sns.histplot(df[col].dropna(), kde=True, ax=ax2)
+                ax2.set_title(f'Distribution with Outliers: {col}')
+                ax2.grid(True, alpha=0.3)
+                
+                plt.tight_layout()
+                safe_col_name = self._sanitize_filename(col)
+                file_path = os.path.join(output_dir, f"outliers_{safe_col_name}.png")
+                plt.savefig(file_path)
+                plt.close(fig)  # Close the figure explicitly
+                generated_files.append(file_path)
+            except Exception as e:
+                logging.warning(f"Error creating outlier visualization for column {col}: {str(e)}")
             
         return generated_files
     
-    def _create_summary_report(self, df: pd.DataFrame, profile_results: Dict, 
-                             outlier_info: Dict, generated_files: List[str],
-                             output_dir: str) -> str:
+    def _create_summary_report(
+        self, 
+        df: pd.DataFrame, 
+        profile_results: Dict, 
+        outlier_info: Dict, 
+        generated_files: List[str],
+        output_dir: str,
+        column_types: Dict[str, List[str]]
+    ) -> str:
         """
         Create a comprehensive summary report.
         
@@ -1775,11 +2422,17 @@ class ExploratoryDataAnalysisTool(Tool):
             outlier_info: Outlier detection results
             generated_files: List of generated visualization files
             output_dir: Directory to save the report
+            column_types: Dictionary of column types
             
         Returns:
             Path to the generated report file
         """
         report_path = os.path.join(output_dir, "eda_summary_report.txt")
+        
+        # Extract column lists by type
+        numeric_cols = column_types['numeric']
+        cat_cols = column_types['categorical']
+        datetime_cols = column_types['datetime']
         
         with open(report_path, 'w') as f:
             f.write("============================================\n")
@@ -1800,21 +2453,18 @@ class ExploratoryDataAnalysisTool(Tool):
             f.write("=================\n\n")
             
             # Numeric columns
-            numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
             f.write(f"Numeric columns ({len(numeric_cols)}):\n")
             for col in numeric_cols:
                 f.write(f"  - {col}\n")
             f.write("\n")
             
-            # Categorical columns (including low-cardinality numeric)
-            cat_cols = [col for col in df.columns if col not in numeric_cols or df[col].nunique() <= 10]
+            # Categorical columns
             f.write(f"Categorical columns ({len(cat_cols)}):\n")
             for col in cat_cols:
                 f.write(f"  - {col}\n")
             f.write("\n")
             
             # Datetime columns
-            datetime_cols = [col for col in df.columns if is_datetime64_any_dtype(df[col])]
             if datetime_cols:
                 f.write(f"Datetime columns ({len(datetime_cols)}):\n")
                 for col in datetime_cols:
@@ -1837,6 +2487,11 @@ class ExploratoryDataAnalysisTool(Tool):
             # Add numeric column statistics
             for col in numeric_cols:
                 profile = profile_results['columns'].get(col, {})
+                if 'error' in profile:
+                    f.write(f"Column: {col}\n")
+                    f.write(f"  - Error: {profile['error']}\n\n")
+                    continue
+                    
                 f.write(f"Column: {col}\n")
                 f.write(f"  - Type: {profile.get('dtype', 'Unknown')}\n")
                 f.write(f"  - Missing: {profile.get('missing_count', 'N/A')} ({profile.get('missing_percentage', 'N/A'):.2f}%)\n")
@@ -1856,6 +2511,11 @@ class ExploratoryDataAnalysisTool(Tool):
                     continue  # Skip numeric columns already covered
                     
                 profile = profile_results['columns'].get(col, {})
+                if 'error' in profile:
+                    f.write(f"Column: {col}\n")
+                    f.write(f"  - Error: {profile['error']}\n\n")
+                    continue
+                    
                 f.write(f"Column: {col}\n")
                 f.write(f"  - Type: {profile.get('dtype', 'Unknown')}\n")
                 f.write(f"  - Missing: {profile.get('missing_count', 'N/A')} ({profile.get('missing_percentage', 'N/A'):.2f}%)\n")
@@ -1865,8 +2525,10 @@ class ExploratoryDataAnalysisTool(Tool):
                 if value_counts:
                     f.write("  - Top categories:\n")
                     for val, count in list(value_counts.items())[:10]:
+                        # Truncate long values for better readability
+                        val_str = val[:50] + '...' if len(val) > 50 else val
                         percent = (count / len(df)) * 100
-                        f.write(f"    * {val}: {count} ({percent:.2f}%)\n")
+                        f.write(f"    * {val_str}: {count} ({percent:.2f}%)\n")
                 f.write("\n")
             
             # Add outlier information
@@ -1936,6 +2598,7 @@ class ExploratoryDataAnalysisTool(Tool):
             # Distribution insights
             skewed_cols = [col for col in numeric_cols 
                          if 'skewness' in profile_results['columns'].get(col, {}) 
+                         and profile_results['columns'][col]['skewness'] is not None
                          and abs(profile_results['columns'][col]['skewness']) > 1]
             if skewed_cols:
                 f.write(f"- Highly skewed distributions detected in {len(skewed_cols)} columns.\n")
@@ -1950,22 +2613,6 @@ class ExploratoryDataAnalysisTool(Tool):
             f.write("End of report\n")
         
         return report_path
-    
-    def _log(self, log_file: str, message: str):
-        """
-        Write a message to the log file.
-        
-        Args:
-            log_file: Path to the log file
-            message: Message to log
-        """
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_message = f"[{timestamp}] {message}\n"
-        
-        with open(log_file, 'a') as f:
-            f.write(log_message)
-        
-        print(log_message.strip())
 
 #Feature Importance and Feature Selection Tool
 
@@ -2067,18 +2714,20 @@ class FeatureImportanceAnalysisTool(Tool):
         Returns:
             Dictionary with analysis results and file paths
         """
+        # Validate input parameters
+        self._validate_parameters(input_path, output_dir, target_column, task_type, method, 
+                               encode_categorical, top_features)
+        
+        # Create output directory first
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Set up logger and log file
+        log_file = os.path.join(output_dir, "feature_importance_analysis.log")
+        logger = self._setup_logging(log_file)
+        
         try:
-            # Create output directory
-            os.makedirs(output_dir, exist_ok=True)
-            
-            # Set up logging file
-            log_file = os.path.join(output_dir, "feature_importance_analysis.log")
-            file_handler = logging.FileHandler(log_file)
-            file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-            logging.getLogger().addHandler(file_handler)
-            
-            logging.info(f"Starting feature importance analysis for {input_path}")
-            logging.info(f"Target column: {target_column}")
+            logger.info(f"Starting feature importance analysis for {input_path}")
+            logger.info(f"Target column: {target_column}")
             
             # Load data and prepare it for analysis
             X, y, original_df, X_original, detected_task_type = self._load_and_prepare_data(
@@ -2086,12 +2735,13 @@ class FeatureImportanceAnalysisTool(Tool):
                 target_column, 
                 task_type,
                 encode_categorical, 
-                max_onehot_cardinality
+                max_onehot_cardinality,
+                logger
             )
             
             if task_type is None:
                 task_type = detected_task_type
-                logging.info(f"Auto-detected task type: {task_type}")
+                logger.info(f"Auto-detected task type: {task_type}")
             
             # Parse the list of top features counts
             top_features_list = [int(n) for n in top_features.split(',')]
@@ -2101,10 +2751,11 @@ class FeatureImportanceAnalysisTool(Tool):
             result_files = self._perform_feature_selection(
                 X, y, original_df, X_original,
                 output_dir, target_column, task_type,
-                method, top_features_list, create_plots, top_n_plot
+                method, top_features_list, create_plots, top_n_plot,
+                logger
             )
             
-            logging.info("Feature importance analysis completed successfully")
+            logger.info("Feature importance analysis completed successfully")
             
             return {
                 "status": "success",
@@ -2119,13 +2770,84 @@ class FeatureImportanceAnalysisTool(Tool):
             }
             
         except Exception as e:
-            logging.error(f"Error in feature importance analysis: {str(e)}", exc_info=True)
+            error_msg = str(e)
+            logger.error(f"Error in feature importance analysis: {error_msg}", exc_info=True)
             return {
                 "status": "error",
-                "error_message": str(e),
+                "error_message": error_msg,
                 "input_path": input_path,
-                "output_dir": output_dir
+                "output_dir": output_dir,
+                "log_file": log_file
             }
+    
+    def _validate_parameters(self, input_path, output_dir, target_column, task_type, method, 
+                         encode_categorical, top_features):
+        """
+        Validate input parameters to catch errors early.
+        
+        Args:
+            input_path: Path to input CSV file
+            output_dir: Directory to save results
+            target_column: Target column name
+            task_type: Task type
+            method: Feature selection method
+            encode_categorical: Method to encode categorical features
+            top_features: Comma-separated list of top features to select
+        """
+        # Check if input file exists and is a CSV
+        if not os.path.exists(input_path):
+            raise ValueError(f"Input file does not exist: {input_path}")
+        
+        if not input_path.lower().endswith('.csv'):
+            raise ValueError(f"Input file must be a CSV file: {input_path}")
+        
+        # Validate task_type if provided
+        if task_type is not None and task_type not in ['classification', 'regression']:
+            raise ValueError(f"Invalid task_type: {task_type}. Must be 'classification' or 'regression'")
+        
+        # Validate method
+        valid_methods = ['rf', 'f_test', 'mutual_info', 'rfe']
+        if method not in valid_methods:
+            raise ValueError(f"Invalid method: {method}. Must be one of {valid_methods}")
+        
+        # Validate encoding method
+        valid_encodings = ['auto', 'onehot', 'label', 'target', 'none']
+        if encode_categorical not in valid_encodings:
+            raise ValueError(f"Invalid encode_categorical: {encode_categorical}. Must be one of {valid_encodings}")
+        
+        # Validate top_features format
+        if not re.match(r'^(\d+,)*\d+$', top_features):
+            raise ValueError(f"Invalid top_features format: {top_features}. Must be comma-separated integers (e.g., '10,50,100')")
+    
+    def _setup_logging(self, log_file):
+        """
+        Set up a logger specific to this instance to avoid modifying the root logger.
+        
+        Args:
+            log_file: Path to log file
+            
+        Returns:
+            Logger instance
+        """
+        # Create logger with unique name
+        logger_name = f"feature_importance_{os.path.basename(log_file)}_{id(self)}"
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(logging.INFO)
+        
+        # Remove all existing handlers to avoid duplicates
+        for handler in logger.handlers[:]:
+            logger.removeHandler(handler)
+        
+        # Create file handler
+        file_handler = logging.FileHandler(log_file, mode='w')  # 'w' mode to overwrite existing log
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(file_handler)
+        
+        # Make logger not propagate messages to parent loggers (root)
+        # This prevents duplicate logs
+        logger.propagate = False
+        
+        return logger
     
     def _load_and_prepare_data(
         self, 
@@ -2133,7 +2855,8 @@ class FeatureImportanceAnalysisTool(Tool):
         target_column: str, 
         task_type: Optional[str],
         encode_categorical: str, 
-        max_onehot_cardinality: int
+        max_onehot_cardinality: int,
+        logger: logging.Logger
     ) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.DataFrame, str]:
         """
         Load data, separate features from target, and handle categorical features.
@@ -2144,11 +2867,12 @@ class FeatureImportanceAnalysisTool(Tool):
             task_type: Task type ('classification' or 'regression')
             encode_categorical: Method to encode categorical features
             max_onehot_cardinality: Max unique values for one-hot encoding
+            logger: Logger instance
             
         Returns:
             Tuple of (X processed, y, original dataframe, X original, detected task type)
         """
-        logging.info(f"Loading data from {input_path}")
+        logger.info(f"Loading data from {input_path}")
         
         try:
             # Load data
@@ -2169,17 +2893,18 @@ class FeatureImportanceAnalysisTool(Tool):
             
             # Handle categorical features
             if encode_categorical != 'none':
-                X = self._encode_categorical_features(X, y, target_column, encode_categorical, max_onehot_cardinality)
+                X = self._encode_categorical_features(X, y, target_column, encode_categorical, 
+                                                 max_onehot_cardinality, input_path, logger)
             else:
                 # Remove categorical columns if encoding is disabled
                 cat_cols = X.select_dtypes(include=['object', 'category']).columns
                 if len(cat_cols) > 0:
-                    logging.warning(f"Removing {len(cat_cols)} categorical columns as encoding is disabled")
+                    logger.warning(f"Removing {len(cat_cols)} categorical columns as encoding is disabled")
                     X = X.select_dtypes(include=[np.number])
             
             # Handle missing values
             if X.isna().any().any():
-                logging.warning(f"Dataset contains missing values. Filling with appropriate values.")
+                logger.warning(f"Dataset contains missing values. Filling with appropriate values.")
                 # For numeric columns, fill with median
                 num_cols = X.select_dtypes(include=[np.number]).columns
                 X[num_cols] = X[num_cols].fillna(X[num_cols].median())
@@ -2189,12 +2914,12 @@ class FeatureImportanceAnalysisTool(Tool):
                     if col not in num_cols:
                         X[col] = X[col].fillna(X[col].mode()[0] if not X[col].mode().empty else 0)
             
-            logging.info(f"Data loaded successfully: {X.shape[0]} rows, {X.shape[1]} features")
+            logger.info(f"Data loaded successfully: {X.shape[0]} rows, {X.shape[1]} features")
             
             return X, y, df, X_original, detected_task_type
             
         except Exception as e:
-            logging.error(f"Error loading data: {str(e)}")
+            logger.error(f"Error loading data: {str(e)}")
             raise
     
     def _detect_task_type(self, y: pd.Series) -> str:
@@ -2226,7 +2951,9 @@ class FeatureImportanceAnalysisTool(Tool):
         y: pd.Series, 
         target_column: str,
         encode_method: str, 
-        max_onehot_cardinality: int
+        max_onehot_cardinality: int,
+        input_path: str,
+        logger: logging.Logger
     ) -> pd.DataFrame:
         """
         Encode categorical features using the specified method.
@@ -2237,6 +2964,8 @@ class FeatureImportanceAnalysisTool(Tool):
             target_column: Name of target column (for target encoding)
             encode_method: Encoding method
             max_onehot_cardinality: Maximum cardinality for one-hot encoding
+            input_path: Path to input file (for saving encoding mappings)
+            logger: Logger instance
             
         Returns:
             Processed dataframe with encoded features
@@ -2245,10 +2974,10 @@ class FeatureImportanceAnalysisTool(Tool):
         cat_cols = X.select_dtypes(include=['object', 'category']).columns
         
         if len(cat_cols) == 0:
-            logging.info("No categorical features found")
+            logger.info("No categorical features found")
             return X
         
-        logging.info(f"Found {len(cat_cols)} categorical features. Encoding method: {encode_method}")
+        logger.info(f"Found {len(cat_cols)} categorical features. Encoding method: {encode_method}")
         
         # Create a copy to work with
         X_encoded = X.copy()
@@ -2258,7 +2987,7 @@ class FeatureImportanceAnalysisTool(Tool):
         
         for col in cat_cols:
             unique_count = X[col].nunique()
-            logging.info(f"Column '{col}' has {unique_count} unique values")
+            logger.info(f"Column '{col}' has {unique_count} unique values")
             
             # Determine encoding method if auto
             method = encode_method
@@ -2270,7 +2999,7 @@ class FeatureImportanceAnalysisTool(Tool):
             
             # Apply the selected encoding method
             if method == 'onehot':
-                logging.info(f"Using one-hot encoding for '{col}'")
+                logger.info(f"Using one-hot encoding for '{col}'")
                 # Get dummies and drop original column
                 dummies = pd.get_dummies(X[col], prefix=col, drop_first=True)
                 X_encoded = pd.concat([X_encoded, dummies], axis=1)
@@ -2278,7 +3007,7 @@ class FeatureImportanceAnalysisTool(Tool):
                 encoding_mappings[col] = {'method': 'onehot', 'categories': X[col].unique().tolist()}
                 
             elif method == 'label':
-                logging.info(f"Using label encoding for '{col}'")
+                logger.info(f"Using label encoding for '{col}'")
                 le = LabelEncoder()
                 X_encoded[f"{col}_label"] = le.fit_transform(X[col].astype(str))
                 # Store mapping
@@ -2288,7 +3017,7 @@ class FeatureImportanceAnalysisTool(Tool):
                 }
                 
             elif method == 'target':
-                logging.info(f"Using target encoding for '{col}'")
+                logger.info(f"Using target encoding for '{col}'")
                 # Create temporary df with target for encoding
                 temp_df = pd.concat([X[[col]], y], axis=1)
                 
@@ -2313,15 +3042,17 @@ class FeatureImportanceAnalysisTool(Tool):
         # Handle any NaN values from the encoding process
         if X_encoded.isna().any().any():
             missing_count = X_encoded.isna().sum().sum()
-            logging.warning(f"Encoding created {missing_count} missing values. Filling with zeros.")
+            logger.warning(f"Encoding created {missing_count} missing values. Filling with zeros.")
             X_encoded = X_encoded.fillna(0)
         
         # Save encoding mappings for interpretability
-        encoding_file = os.path.join(os.path.dirname(os.path.abspath(encoding_mappings.get('file', 'encodings.json'))), 
-                                   'categorical_encodings.json')
+        # Use the output directory from the input path instead of a hardcoded directory
+        output_dir = os.path.dirname(os.path.abspath(input_path))
+        encoding_file = os.path.join(output_dir, 'categorical_encodings.json')
+        
         with open(encoding_file, 'w') as f:
             json.dump(encoding_mappings, f, indent=2, default=str)
-        logging.info(f"Saved categorical encoding mappings to {encoding_file}")
+        logger.info(f"Saved categorical encoding mappings to {encoding_file}")
         
         return X_encoded
     
@@ -2337,7 +3068,8 @@ class FeatureImportanceAnalysisTool(Tool):
         method: str,
         top_features_list: List[int],
         create_plots: bool,
-        top_n_plot: int
+        top_n_plot: int,
+        logger: logging.Logger
     ) -> Dict[str, str]:
         """
         Perform feature selection using the specified method.
@@ -2354,6 +3086,7 @@ class FeatureImportanceAnalysisTool(Tool):
             top_features_list: List of top feature counts to select
             create_plots: Whether to create visualization plots
             top_n_plot: Number of top features to show in plots
+            logger: Logger instance
             
         Returns:
             Dictionary of output file paths
@@ -2381,7 +3114,7 @@ class FeatureImportanceAnalysisTool(Tool):
             raise ValueError(f"Unknown feature selection method: {method}")
         
         selection_method = methods[method]
-        logging.info(f"Using {method} method for feature selection")
+        logger.info(f"Using {method} method for feature selection")
         
         # Create feature importance file
         importance_file = os.path.join(output_dir, 'feature_importance.csv')
@@ -2392,52 +3125,52 @@ class FeatureImportanceAnalysisTool(Tool):
         
         # For RFE, we need to run the algorithm separately for each n_features
         if method == 'rfe':
-            logging.info("Using Recursive Feature Elimination (RFE)")
+            logger.info("Using Recursive Feature Elimination (RFE)")
             selected_features_all = {}
             
             for n_features in top_features_list:
                 if n_features > X.shape[1]:
-                    logging.warning(f"Requested {n_features} features, but only {X.shape[1]} are available")
+                    logger.warning(f"Requested {n_features} features, but only {X.shape[1]} are available")
                     n_features = X.shape[1]
                 
                 # Get selected features
-                selected_features, _ = selection_method(X, y, n_features)
+                selected_features, scores = selection_method(X, y, n_features, logger)
                 selected_features_all[n_features] = selected_features
                 
                 # Save selected features
                 output_file = self._save_selected_features(
                     original_df, target_column, selected_features, 
-                    output_dir, n_features, X_original, X
+                    output_dir, n_features, X_original, X, logger
                 )
                 selected_files[n_features] = output_file
                 
                 # Generate visualizations if requested
                 if create_plots and n_features > 1 and n_features <= 500:
-                    self._create_visualizations(X, y, selected_features, output_dir, n_features, task_type)
+                    self._create_visualizations(X, y, selected_features, output_dir, n_features, task_type, logger)
             
             # For RFE, create an importance file using RF for visualization purposes
             if create_plots:
-                all_features, scores = (self._select_features_rf_classifier(X, y, X.shape[1]) if task_type == 'classification' 
-                                     else self._select_features_rf_regressor(X, y, X.shape[1]))
+                all_features, scores = (self._select_features_rf_classifier(X, y, X.shape[1], logger) if task_type == 'classification' 
+                                     else self._select_features_rf_regressor(X, y, X.shape[1], logger))
                 
                 importance_df = pd.DataFrame({
-                    'feature': X.columns,
+                    'feature': all_features,
                     'importance': scores
                 })
                 importance_df = importance_df.sort_values('importance', ascending=False)
                 importance_df.to_csv(importance_file, index=False)
                 
                 # Create visualization plots
-                self._plot_feature_importance(importance_df, output_dir, top_n_plot)
-                self._plot_cumulative_importance(importance_df, output_dir)
+                self._plot_feature_importance(importance_df, output_dir, top_n_plot, logger)
+                self._plot_cumulative_importance(importance_df, output_dir, logger)
                 
                 # Plot correlation of top features
                 top_features = importance_df['feature'].iloc[:min(20, len(importance_df))].tolist()
-                self._plot_feature_correlation(X, top_features, output_dir)
+                self._plot_feature_correlation(X, top_features, output_dir, logger)
         
         else:  # For other methods
             # Get all features with importance values
-            all_features, scores = selection_method(X, y, X.shape[1])
+            all_features, scores = selection_method(X, y, X.shape[1], logger)
             
             # Create importance dataframe
             importance_df = pd.DataFrame({
@@ -2446,27 +3179,27 @@ class FeatureImportanceAnalysisTool(Tool):
             })
             importance_df = importance_df.sort_values('importance', ascending=False)
             importance_df.to_csv(importance_file, index=False)
-            logging.info(f"Saved feature importance to {importance_file}")
+            logger.info(f"Saved feature importance to {importance_file}")
             
             # Generate visualization plots if requested
             if create_plots:
-                logging.info("Generating visualization plots...")
+                logger.info("Generating visualization plots...")
                 
                 # Plot feature importance
-                self._plot_feature_importance(importance_df, output_dir, top_n_plot)
+                self._plot_feature_importance(importance_df, output_dir, top_n_plot, logger)
                 
                 # Plot cumulative importance
-                thresholds = self._plot_cumulative_importance(importance_df, output_dir)
-                logging.info(f"Feature threshold analysis: {thresholds}")
+                thresholds = self._plot_cumulative_importance(importance_df, output_dir, logger)
+                logger.info(f"Feature threshold analysis: {thresholds}")
                 
                 # Plot correlation of top features
                 top_features = importance_df['feature'].iloc[:min(20, len(importance_df))].tolist()
-                self._plot_feature_correlation(X, top_features, output_dir)
+                self._plot_feature_correlation(X, top_features, output_dir, logger)
             
             # For each number of features, save a CSV and create visualizations
             for n_features in top_features_list:
                 if n_features > X.shape[1]:
-                    logging.warning(f"Requested {n_features} features, but only {X.shape[1]} are available")
+                    logger.warning(f"Requested {n_features} features, but only {X.shape[1]} are available")
                     n_features = X.shape[1]
                 
                 # Get top n_features from importance dataframe
@@ -2475,22 +3208,22 @@ class FeatureImportanceAnalysisTool(Tool):
                 # Save selected features to CSV
                 output_file = self._save_selected_features(
                     original_df, target_column, selected_features, 
-                    output_dir, n_features, X_original, X
+                    output_dir, n_features, X_original, X, logger
                 )
                 selected_files[n_features] = output_file
                 
                 # Generate PCA and t-SNE visualizations if requested
                 if create_plots and n_features > 1 and n_features <= 500:
-                    self._create_visualizations(X, y, selected_features, output_dir, n_features, task_type)
+                    self._create_visualizations(X, y, selected_features, output_dir, n_features, task_type, logger)
                 
         # Add selected feature files to result
         result_files['selected_features'] = selected_files
         
         return result_files
     
-    def _select_features_rf_classifier(self, X: pd.DataFrame, y: pd.Series, n_features: int) -> Tuple[List[str], np.ndarray]:
+    def _select_features_rf_classifier(self, X: pd.DataFrame, y: pd.Series, n_features: int, logger: logging.Logger) -> Tuple[List[str], np.ndarray]:
         """Select features using Random Forest classifier importance"""
-        logging.info(f"Selecting top {n_features} features using Random Forest classifier importance")
+        logger.info(f"Selecting top {n_features} features using Random Forest classifier importance")
         
         # Create and fit Random Forest
         rf = RandomForestClassifier(n_estimators=100, random_state=42)
@@ -2504,9 +3237,9 @@ class FeatureImportanceAnalysisTool(Tool):
         
         return X.columns[indices].tolist(), importances
     
-    def _select_features_rf_regressor(self, X: pd.DataFrame, y: pd.Series, n_features: int) -> Tuple[List[str], np.ndarray]:
+    def _select_features_rf_regressor(self, X: pd.DataFrame, y: pd.Series, n_features: int, logger: logging.Logger) -> Tuple[List[str], np.ndarray]:
         """Select features using Random Forest regressor importance"""
-        logging.info(f"Selecting top {n_features} features using Random Forest regressor importance")
+        logger.info(f"Selecting top {n_features} features using Random Forest regressor importance")
         
         # Create and fit Random Forest
         rf = RandomForestRegressor(n_estimators=100, random_state=42)
@@ -2520,9 +3253,9 @@ class FeatureImportanceAnalysisTool(Tool):
         
         return X.columns[indices].tolist(), importances
     
-    def _select_features_f_test_classifier(self, X: pd.DataFrame, y: pd.Series, n_features: int) -> Tuple[List[str], np.ndarray]:
+    def _select_features_f_test_classifier(self, X: pd.DataFrame, y: pd.Series, n_features: int, logger: logging.Logger) -> Tuple[List[str], np.ndarray]:
         """Select features using ANOVA F-value for classification"""
-        logging.info(f"Selecting top {n_features} features using ANOVA F-test for classification")
+        logger.info(f"Selecting top {n_features} features using ANOVA F-test for classification")
         
         # Apply SelectKBest with f_classif
         selector = SelectKBest(f_classif, k=min(n_features, X.shape[1]))
@@ -2533,9 +3266,9 @@ class FeatureImportanceAnalysisTool(Tool):
         
         return X.columns[mask].tolist(), selector.scores_
     
-    def _select_features_f_test_regressor(self, X: pd.DataFrame, y: pd.Series, n_features: int) -> Tuple[List[str], np.ndarray]:
+    def _select_features_f_test_regressor(self, X: pd.DataFrame, y: pd.Series, n_features: int, logger: logging.Logger) -> Tuple[List[str], np.ndarray]:
         """Select features using F-test for regression"""
-        logging.info(f"Selecting top {n_features} features using F-test for regression")
+        logger.info(f"Selecting top {n_features} features using F-test for regression")
         
         # Apply SelectKBest with f_regression
         selector = SelectKBest(f_regression, k=min(n_features, X.shape[1]))
@@ -2546,9 +3279,9 @@ class FeatureImportanceAnalysisTool(Tool):
         
         return X.columns[mask].tolist(), selector.scores_
     
-    def _select_features_mutual_info_classifier(self, X: pd.DataFrame, y: pd.Series, n_features: int) -> Tuple[List[str], np.ndarray]:
+    def _select_features_mutual_info_classifier(self, X: pd.DataFrame, y: pd.Series, n_features: int, logger: logging.Logger) -> Tuple[List[str], np.ndarray]:
         """Select features using mutual information for classification"""
-        logging.info(f"Selecting top {n_features} features using mutual information for classification")
+        logger.info(f"Selecting top {n_features} features using mutual information for classification")
         
         # Apply SelectKBest with mutual_info_classif
         selector = SelectKBest(mutual_info_classif, k=min(n_features, X.shape[1]))
@@ -2559,9 +3292,9 @@ class FeatureImportanceAnalysisTool(Tool):
         
         return X.columns[mask].tolist(), selector.scores_
     
-    def _select_features_mutual_info_regressor(self, X: pd.DataFrame, y: pd.Series, n_features: int) -> Tuple[List[str], np.ndarray]:
+    def _select_features_mutual_info_regressor(self, X: pd.DataFrame, y: pd.Series, n_features: int, logger: logging.Logger) -> Tuple[List[str], np.ndarray]:
         """Select features using mutual information for regression"""
-        logging.info(f"Selecting top {n_features} features using mutual information for regression")
+        logger.info(f"Selecting top {n_features} features using mutual information for regression")
         
         # Apply SelectKBest with mutual_info_regression
         selector = SelectKBest(mutual_info_regression, k=min(n_features, X.shape[1]))
@@ -2572,37 +3305,45 @@ class FeatureImportanceAnalysisTool(Tool):
         
         return X.columns[mask].tolist(), selector.scores_
     
-    def _select_features_rfe_classifier(self, X: pd.DataFrame, y: pd.Series, n_features: int) -> Tuple[List[str], np.ndarray]:
+    def _select_features_rfe_classifier(self, X: pd.DataFrame, y: pd.Series, n_features: int, logger: logging.Logger) -> Tuple[List[str], np.ndarray]:
         """Select features using RFE with Random Forest classifier"""
-        logging.info(f"Selecting top {n_features} features using RFE with classifier")
+        logger.info(f"Selecting top {n_features} features using RFE with classifier")
         
-        # Create RFE with RandomForestClassifier
-        estimator = RandomForestClassifier(n_estimators=100, random_state=42)
-        selector = RFE(estimator, n_features_to_select=min(n_features, X.shape[1]), step=0.1)
-        
-        # Fit RFE
-        selector.fit(X, y)
-        
-        # Get selected feature indices
-        mask = selector.get_support()
-        
-        return X.columns[mask].tolist(), selector.ranking_
+        try:
+            # Create RFE with RandomForestClassifier
+            estimator = RandomForestClassifier(n_estimators=100, random_state=42)
+            selector = RFE(estimator, n_features_to_select=min(n_features, X.shape[1]), step=0.1)
+            
+            # Fit RFE
+            selector.fit(X, y)
+            
+            # Get selected feature indices
+            mask = selector.get_support()
+            
+            return X.columns[mask].tolist(), selector.ranking_
+        except Exception as e:
+            logger.error(f"Error in RFE classification: {str(e)}. Falling back to Random Forest importance.")
+            return self._select_features_rf_classifier(X, y, n_features, logger)
     
-    def _select_features_rfe_regressor(self, X: pd.DataFrame, y: pd.Series, n_features: int) -> Tuple[List[str], np.ndarray]:
+    def _select_features_rfe_regressor(self, X: pd.DataFrame, y: pd.Series, n_features: int, logger: logging.Logger) -> Tuple[List[str], np.ndarray]:
         """Select features using RFE with Random Forest regressor"""
-        logging.info(f"Selecting top {n_features} features using RFE with regressor")
+        logger.info(f"Selecting top {n_features} features using RFE with regressor")
         
-        # Create RFE with RandomForestRegressor
-        estimator = RandomForestRegressor(n_estimators=100, random_state=42)
-        selector = RFE(estimator, n_features_to_select=min(n_features, X.shape[1]), step=0.1)
-        
-        # Fit RFE
-        selector.fit(X, y)
-        
-        # Get selected feature indices
-        mask = selector.get_support()
-        
-        return X.columns[mask].tolist(), selector.ranking_
+        try:
+            # Create RFE with RandomForestRegressor
+            estimator = RandomForestRegressor(n_estimators=100, random_state=42)
+            selector = RFE(estimator, n_features_to_select=min(n_features, X.shape[1]), step=0.1)
+            
+            # Fit RFE
+            selector.fit(X, y)
+            
+            # Get selected feature indices
+            mask = selector.get_support()
+            
+            return X.columns[mask].tolist(), selector.ranking_
+        except Exception as e:
+            logger.error(f"Error in RFE regression: {str(e)}. Falling back to Random Forest importance.")
+            return self._select_features_rf_regressor(X, y, n_features, logger)
     
     def _save_selected_features(
         self, 
@@ -2612,7 +3353,8 @@ class FeatureImportanceAnalysisTool(Tool):
         output_dir: str, 
         n_features: int,
         X_original: Optional[pd.DataFrame] = None,
-        X_encoded: Optional[pd.DataFrame] = None
+        X_encoded: Optional[pd.DataFrame] = None,
+        logger: Optional[logging.Logger] = None
     ) -> str:
         """
         Save selected features to CSV file with interpretation of encoded features.
@@ -2625,6 +3367,7 @@ class FeatureImportanceAnalysisTool(Tool):
             n_features: Number of features selected
             X_original: Original features before encoding
             X_encoded: Encoded features
+            logger: Logger instance
             
         Returns:
             Path to the output CSV file
@@ -2663,7 +3406,8 @@ class FeatureImportanceAnalysisTool(Tool):
             if feature_metadata:
                 with open(meta_file, 'w') as f:
                     json.dump(feature_metadata, f, indent=2)
-                logging.info(f"Saved feature metadata to {meta_file}")
+                if logger:
+                    logger.info(f"Saved feature metadata to {meta_file}")
         
         # Prepare data to save
         try:
@@ -2677,7 +3421,8 @@ class FeatureImportanceAnalysisTool(Tool):
             
             if missing_cols:
                 # Some selected features are encoded and not in original_df
-                logging.info(f"Creating dataset with encoded features: {', '.join(missing_cols)}")
+                if logger:
+                    logger.info(f"Creating dataset with encoded features: {', '.join(missing_cols)}")
                 
                 # Start with features that exist in original_df
                 existing_cols = [col for col in columns_to_save if col in original_df.columns]
@@ -2685,25 +3430,34 @@ class FeatureImportanceAnalysisTool(Tool):
                 
                 # Add encoded features from X_encoded
                 for col in missing_cols:
-                    if col in X_encoded.columns:
+                    if X_encoded is not None and col in X_encoded.columns:
                         selected_df[col] = X_encoded[col]
                     else:
-                        logging.warning(f"Feature {col} not found in encoded or original data")
+                        if logger:
+                            logger.warning(f"Feature {col} not found in encoded or original data")
             else:
                 # All selected features are in the original dataframe
                 selected_df = original_df[columns_to_save].copy()
         except Exception as e:
-            logging.error(f"Error creating selected features dataset: {str(e)}")
+            error_msg = str(e)
+            if logger:
+                logger.error(f"Error creating selected features dataset: {error_msg}")
             # Fallback: just save the selected features from X_encoded with the target
             selected_df = pd.DataFrame()
-            for col in selected_features:
-                if col in X_encoded.columns:
-                    selected_df[col] = X_encoded[col]
-            selected_df[target_column] = original_df[target_column].reset_index(drop=True)
+            
+            if X_encoded is not None:
+                for col in selected_features:
+                    if col in X_encoded.columns:
+                        selected_df[col] = X_encoded[col]
+                selected_df[target_column] = original_df[target_column].reset_index(drop=True)
+            else:
+                # Last resort fallback
+                selected_df = pd.DataFrame({target_column: original_df[target_column]})
         
         # Save to CSV
         selected_df.to_csv(output_file, index=False)
-        logging.info(f"Saved top {n_features} features to {output_file}")
+        if logger:
+            logger.info(f"Saved top {n_features} features to {output_file}")
         
         return output_file
     
@@ -2714,7 +3468,8 @@ class FeatureImportanceAnalysisTool(Tool):
         selected_features: List[str],
         output_dir: str,
         n_features: int,
-        task_type: str
+        task_type: str,
+        logger: Optional[logging.Logger] = None
     ):
         """
         Create visualization plots for the selected features.
@@ -2726,21 +3481,33 @@ class FeatureImportanceAnalysisTool(Tool):
             output_dir: Directory to save output
             n_features: Number of features selected
             task_type: 'classification' or 'regression'
+            logger: Logger instance
         """
         # Create plots directory
         plots_dir = os.path.join(output_dir, "plots")
         os.makedirs(plots_dir, exist_ok=True)
         
-        # Generate PCA visualization
-        self._plot_pca_visualization(X, y, selected_features, plots_dir, n_features, task_type)
-        
-        # Generate t-SNE visualization for smaller datasets
-        if len(X) <= 5000 or n_features <= 100:
-            self._plot_tsne_visualization(X, y, selected_features, plots_dir, n_features, task_type)
-        else:
-            logging.info(f"Skipping t-SNE for {n_features} features due to dataset size")
+        try:
+            # Generate PCA visualization
+            self._plot_pca_visualization(X, y, selected_features, plots_dir, n_features, task_type, logger)
+            
+            # Generate t-SNE visualization for smaller datasets
+            if len(X) <= 5000 or n_features <= 100:
+                self._plot_tsne_visualization(X, y, selected_features, plots_dir, n_features, task_type, logger)
+            else:
+                if logger:
+                    logger.info(f"Skipping t-SNE for {n_features} features due to dataset size")
+        except Exception as e:
+            if logger:
+                logger.error(f"Error creating visualizations: {str(e)}")
     
-    def _plot_feature_importance(self, importance_df: pd.DataFrame, output_dir: str, top_n: int = 30):
+    def _plot_feature_importance(
+        self, 
+        importance_df: pd.DataFrame, 
+        output_dir: str, 
+        top_n: int = 30,
+        logger: Optional[logging.Logger] = None
+    ):
         """
         Create a bar plot of feature importance for the top N features.
         
@@ -2748,37 +3515,51 @@ class FeatureImportanceAnalysisTool(Tool):
             importance_df: DataFrame with feature names and importance scores
             output_dir: Directory to save the plot
             top_n: Number of top features to show
+            logger: Logger instance
         """
         plots_dir = os.path.join(output_dir, "plots")
         os.makedirs(plots_dir, exist_ok=True)
         
-        plt.figure(figsize=(12, 8))
-        
-        # Use only top N features for readability
-        plot_df = importance_df.head(min(top_n, len(importance_df)))
-        
-        # Create horizontal bar plot
-        sns.barplot(x='importance', y='feature', data=plot_df)
-        
-        # Customize plot
-        plt.title(f'Top {len(plot_df)} Feature Importance', fontsize=16)
-        plt.xlabel('Importance Score', fontsize=14)
-        plt.ylabel('Features', fontsize=14)
-        plt.tight_layout()
-        
-        # Save plot
-        importance_plot_file = os.path.join(plots_dir, 'feature_importance_plot.png')
-        plt.savefig(importance_plot_file, dpi=300, bbox_inches='tight')
-        plt.close()
-        logging.info(f"Saved feature importance plot to {importance_plot_file}")
+        try:
+            plt.figure(figsize=(12, 8))
+            
+            # Use only top N features for readability
+            plot_df = importance_df.head(min(top_n, len(importance_df)))
+            
+            # Create horizontal bar plot
+            sns.barplot(x='importance', y='feature', data=plot_df)
+            
+            # Customize plot
+            plt.title(f'Top {len(plot_df)} Feature Importance', fontsize=16)
+            plt.xlabel('Importance Score', fontsize=14)
+            plt.ylabel('Features', fontsize=14)
+            plt.tight_layout()
+            
+            # Save plot
+            importance_plot_file = os.path.join(plots_dir, 'feature_importance_plot.png')
+            plt.savefig(importance_plot_file, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            if logger:
+                logger.info(f"Saved feature importance plot to {importance_plot_file}")
+        except Exception as e:
+            if logger:
+                logger.error(f"Error creating feature importance plot: {str(e)}")
+            plt.close()
     
-    def _plot_cumulative_importance(self, importance_df: pd.DataFrame, output_dir: str) -> Dict[float, int]:
+    def _plot_cumulative_importance(
+        self, 
+        importance_df: pd.DataFrame, 
+        output_dir: str,
+        logger: Optional[logging.Logger] = None
+    ) -> Dict[float, int]:
         """
         Create a plot of cumulative feature importance.
         
         Args:
             importance_df: DataFrame with feature names and importance scores
             output_dir: Directory to save the plot
+            logger: Logger instance
             
         Returns:
             Dictionary mapping importance thresholds to number of features
@@ -2786,40 +3567,59 @@ class FeatureImportanceAnalysisTool(Tool):
         plots_dir = os.path.join(output_dir, "plots")
         os.makedirs(plots_dir, exist_ok=True)
         
-        plt.figure(figsize=(10, 6))
-        
-        # Calculate cumulative importance
-        importance_df = importance_df.sort_values('importance', ascending=False).reset_index(drop=True)
-        cumulative_importance = importance_df['importance'].cumsum() / importance_df['importance'].sum()
-        
-        # Plot
-        plt.plot(range(1, len(cumulative_importance) + 1), cumulative_importance, 'b-')
-        plt.xlabel('Number of Features', fontsize=14)
-        plt.ylabel('Cumulative Importance', fontsize=14)
-        plt.title('Cumulative Feature Importance', fontsize=16)
-        
-        # Add horizontal lines at common thresholds
-        thresholds = [0.8, 0.9, 0.95, 0.99]
-        colors = ['r', 'g', 'orange', 'purple']
-        for threshold, color in zip(thresholds, colors):
-            n_features = (cumulative_importance >= threshold).argmax() + 1
-            plt.axhline(y=threshold, color=color, linestyle='--', 
-                      label=f'{threshold*100:.0f}% importance: {n_features} features')
-            plt.axvline(x=n_features, color=color, linestyle='--')
-        
-        plt.legend(loc='lower right')
-        plt.grid(True, linestyle='--', alpha=0.7)
-        plt.tight_layout()
-        
-        # Save plot
-        cumulative_plot_file = os.path.join(plots_dir, 'cumulative_importance_plot.png')
-        plt.savefig(cumulative_plot_file, dpi=300, bbox_inches='tight')
-        plt.close()
-        logging.info(f"Saved cumulative importance plot to {cumulative_plot_file}")
-        
-        return dict([(t, (cumulative_importance >= t).argmax() + 1) for t in thresholds])
+        try:
+            plt.figure(figsize=(10, 6))
+            
+            # Calculate cumulative importance
+            importance_df = importance_df.sort_values('importance', ascending=False).reset_index(drop=True)
+            cumulative_importance = importance_df['importance'].cumsum() / importance_df['importance'].sum()
+            
+            # Plot
+            plt.plot(range(1, len(cumulative_importance) + 1), cumulative_importance, 'b-')
+            plt.xlabel('Number of Features', fontsize=14)
+            plt.ylabel('Cumulative Importance', fontsize=14)
+            plt.title('Cumulative Feature Importance', fontsize=16)
+            
+            # Add horizontal lines at common thresholds
+            thresholds = [0.8, 0.9, 0.95, 0.99]
+            colors = ['r', 'g', 'orange', 'purple']
+            
+            threshold_results = {}
+            for threshold, color in zip(thresholds, colors):
+                n_features = (cumulative_importance >= threshold).argmax() + 1
+                threshold_results[threshold] = n_features
+                
+                plt.axhline(y=threshold, color=color, linestyle='--', 
+                          label=f'{threshold*100:.0f}% importance: {n_features} features')
+                plt.axvline(x=n_features, color=color, linestyle='--')
+            
+            plt.legend(loc='lower right')
+            plt.grid(True, linestyle='--', alpha=0.7)
+            plt.tight_layout()
+            
+            # Save plot
+            cumulative_plot_file = os.path.join(plots_dir, 'cumulative_importance_plot.png')
+            plt.savefig(cumulative_plot_file, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            if logger:
+                logger.info(f"Saved cumulative importance plot to {cumulative_plot_file}")
+            
+            return threshold_results
+        except Exception as e:
+            if logger:
+                logger.error(f"Error creating cumulative importance plot: {str(e)}")
+            plt.close()
+            return {}
     
-    def _plot_feature_correlation(self, X: pd.DataFrame, selected_features: List[str], output_dir: str, max_features: int = 20):
+    def _plot_feature_correlation(
+        self, 
+        X: pd.DataFrame, 
+        selected_features: List[str], 
+        output_dir: str, 
+        logger: Optional[logging.Logger] = None,
+        max_features: int = 20
+    ):
         """
         Create a correlation heatmap of the selected features.
         
@@ -2827,37 +3627,54 @@ class FeatureImportanceAnalysisTool(Tool):
             X: Feature dataframe
             selected_features: List of feature names to include
             output_dir: Directory to save the plot
+            logger: Logger instance
             max_features: Maximum number of features to include in the plot
         """
         plots_dir = os.path.join(output_dir, "plots")
         os.makedirs(plots_dir, exist_ok=True)
         
-        # Use up to max_features to keep the plot readable
-        if len(selected_features) > max_features:
-            plot_features = selected_features[:max_features]
-            logging.info(f"Showing correlation heatmap with top {max_features} features")
-        else:
-            plot_features = selected_features
+        try:
+            # Use up to max_features to keep the plot readable
+            if len(selected_features) > max_features:
+                plot_features = selected_features[:max_features]
+                if logger:
+                    logger.info(f"Showing correlation heatmap with top {max_features} features")
+            else:
+                plot_features = selected_features
             
-        # Calculate correlation matrix
-        corr = X[plot_features].corr()
-        
-        # Create heatmap
-        plt.figure(figsize=(12, 10))
-        mask = np.triu(np.ones_like(corr, dtype=bool))  # Create mask for upper triangle
-        cmap = sns.diverging_palette(230, 20, as_cmap=True)
-        
-        sns.heatmap(corr, mask=mask, cmap=cmap, vmax=1, vmin=-1, center=0,
-                   square=True, linewidths=.5, annot=True, fmt=".2f", cbar_kws={"shrink": .7})
-        
-        plt.title(f'Correlation Matrix of Top {len(plot_features)} Features', fontsize=16)
-        plt.tight_layout()
-        
-        # Save plot
-        corr_plot_file = os.path.join(plots_dir, 'feature_correlation_heatmap.png')
-        plt.savefig(corr_plot_file, dpi=300, bbox_inches='tight')
-        plt.close()
-        logging.info(f"Saved correlation heatmap to {corr_plot_file}")
+            # Ensure all selected features exist in X
+            plot_features = [f for f in plot_features if f in X.columns]
+            
+            if not plot_features:
+                if logger:
+                    logger.warning("No valid features for correlation heatmap")
+                return
+                
+            # Calculate correlation matrix
+            corr = X[plot_features].corr()
+            
+            # Create heatmap
+            plt.figure(figsize=(12, 10))
+            mask = np.triu(np.ones_like(corr, dtype=bool))  # Create mask for upper triangle
+            cmap = sns.diverging_palette(230, 20, as_cmap=True)
+            
+            sns.heatmap(corr, mask=mask, cmap=cmap, vmax=1, vmin=-1, center=0,
+                       square=True, linewidths=.5, annot=True, fmt=".2f", cbar_kws={"shrink": .7})
+            
+            plt.title(f'Correlation Matrix of Top {len(plot_features)} Features', fontsize=16)
+            plt.tight_layout()
+            
+            # Save plot
+            corr_plot_file = os.path.join(plots_dir, 'feature_correlation_heatmap.png')
+            plt.savefig(corr_plot_file, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            if logger:
+                logger.info(f"Saved correlation heatmap to {corr_plot_file}")
+        except Exception as e:
+            if logger:
+                logger.error(f"Error creating correlation heatmap: {str(e)}")
+            plt.close()
     
     def _plot_pca_visualization(
         self,
@@ -2866,7 +3683,8 @@ class FeatureImportanceAnalysisTool(Tool):
         selected_features: List[str],
         output_dir: str,
         n_features: int,
-        task_type: str
+        task_type: str,
+        logger: Optional[logging.Logger] = None
     ):
         """
         Create a PCA visualization of the selected features.
@@ -2874,14 +3692,23 @@ class FeatureImportanceAnalysisTool(Tool):
         Args:
             X: Feature dataframe
             y: Target variable
-            selected_features: List of feature names to include
+            selected_features: List of selected feature names
             output_dir: Directory to save the plot
             n_features: Number of features selected
             task_type: 'classification' or 'regression'
+            logger: Logger instance
         """
         try:
+            # Filter selected features that exist in X
+            valid_features = [f for f in selected_features if f in X.columns]
+            
+            if len(valid_features) < 2:
+                if logger:
+                    logger.warning(f"Not enough valid features for PCA visualization (need at least 2, got {len(valid_features)})")
+                return
+            
             # Only use selected features
-            X_selected = X[selected_features]
+            X_selected = X[valid_features]
             
             # Apply PCA for dimensionality reduction to 2D
             pca = PCA(n_components=2, random_state=42)
@@ -2923,9 +3750,13 @@ class FeatureImportanceAnalysisTool(Tool):
             pca_plot_file = os.path.join(output_dir, f'pca_visualization_top_{n_features}.png')
             plt.savefig(pca_plot_file, dpi=300, bbox_inches='tight')
             plt.close()
-            logging.info(f"Saved PCA visualization to {pca_plot_file}")
+            
+            if logger:
+                logger.info(f"Saved PCA visualization to {pca_plot_file}")
         except Exception as e:
-            logging.error(f"Error creating PCA visualization: {str(e)}")
+            if logger:
+                logger.error(f"Error creating PCA visualization: {str(e)}")
+            plt.close()
     
     def _plot_tsne_visualization(
         self,
@@ -2935,6 +3766,7 @@ class FeatureImportanceAnalysisTool(Tool):
         output_dir: str,
         n_features: int,
         task_type: str,
+        logger: Optional[logging.Logger] = None,
         perplexity: int = 30
     ):
         """
@@ -2943,15 +3775,24 @@ class FeatureImportanceAnalysisTool(Tool):
         Args:
             X: Feature dataframe
             y: Target variable
-            selected_features: List of feature names to include
+            selected_features: List of selected feature names
             output_dir: Directory to save the plot
             n_features: Number of features selected
             task_type: 'classification' or 'regression'
+            logger: Logger instance
             perplexity: Perplexity parameter for t-SNE
         """
         try:
+            # Filter selected features that exist in X
+            valid_features = [f for f in selected_features if f in X.columns]
+            
+            if len(valid_features) < 2:
+                if logger:
+                    logger.warning(f"Not enough valid features for t-SNE visualization (need at least 2, got {len(valid_features)})")
+                return
+            
             # Only use selected features
-            X_selected = X[selected_features]
+            X_selected = X[valid_features]
             
             # Apply t-SNE for dimensionality reduction to 2D
             perplexity = min(perplexity, len(X_selected) - 1)  # Perplexity must be less than n_samples - 1
@@ -2990,9 +3831,13 @@ class FeatureImportanceAnalysisTool(Tool):
             tsne_plot_file = os.path.join(output_dir, f'tsne_visualization_top_{n_features}.png')
             plt.savefig(tsne_plot_file, dpi=300, bbox_inches='tight')
             plt.close()
-            logging.info(f"Saved t-SNE visualization to {tsne_plot_file}")
+            
+            if logger:
+                logger.info(f"Saved t-SNE visualization to {tsne_plot_file}")
         except Exception as e:
-            logging.error(f"Error creating t-SNE visualization: {str(e)}")
+            if logger:
+                logger.error(f"Error creating t-SNE visualization: {str(e)}")
+            plt.close()
 
 #nnUNet Training and Inference Tool
 
