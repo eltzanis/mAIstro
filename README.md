@@ -79,11 +79,11 @@ The following tools are part of the mAIstro multi-agentic system. Each tool is d
 4. [nnUNet Training Tool](docs/nnUNet_training_tool_doc.md)
 5. [nnUNet Inference Tool](docs/nnUNet_inference_tool_doc.md)
 6. [TotalSegmentator Tool](docs/TotalSegmentator_tool.doc.md)
-7. [PyCaret Classification Training](docs/pycaret_classification_training_tool_doc.md)
-8. [PyCaret Classification Inference](docs/pycaret_classification_inference_tool_doc.md)
-9. [PyCaret Regression Training](docs/pycaret_regression_training_tool_doc.md)
-10. [PyCaret Regression Inference](docs/pycaret_regression_inference_tool_doc.md)
-11. [Medical Image Classification](docs/medical_image_classification_tools_doc.md)
+7. [PyCaret Classification Training Tool](docs/pycaret_classification_training_tool_doc.md)
+8. [PyCaret Classification Inference Tool](docs/pycaret_classification_inference_tool_doc.md)
+9. [PyCaret Regression Training Tool](docs/pycaret_regression_training_tool_doc.md)
+10. [PyCaret Regression Inference Tool](docs/pycaret_regression_inference_tool_doc.md)
+11. [Medical Image Classification Tools](docs/medical_image_classification_tools_doc.md)
 
 ---
 
