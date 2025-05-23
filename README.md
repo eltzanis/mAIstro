@@ -69,9 +69,21 @@ This makes it easy to explore and test the full functionality of mAIstro on any 
 
 ---
 
-## 📚 Documentation
-A full user guide and advanced examples will be provided soon.  
-Stay tuned for updates!
+## 📚 Tool Documentation
+
+The following tools are part of the mAIstro multi-agentic system. Each tool is described in detail in its own documentation file:
+
+1. [Radiomics Tool](docs/pyradiomics_tool_doc.md)
+2. [EDA Tool](docs/eda_tool_doc.md)
+3. [Feature Selection Tool](docs/feature_selection_tool_doc.md)
+4. [nnUNet Training Tool](docs/nnUNet_training_tool_doc.md)
+5. [nnUNet Inference Tool](docs/nnUNet_inference_tool_doc.md)
+6. [TotalSegmentator Tool](docs/TotalSegmentator_tool.doc.md)
+7. [PyCaret Classification Training](docs/pycaret_classification_training_tool_doc.md)
+8. [PyCaret Classification Inference](docs/pycaret_classification_inference_tool_doc.md)
+9. [PyCaret Regression Training](docs/pycaret_regression_training_tool_doc.md)
+10. [PyCaret Regression Inference](docs/pycaret_regression_inference_tool_doc.md)
+11. [Medical Image Classification](docs/medical_image_classification_tools_doc.md)
 
 ---
 
