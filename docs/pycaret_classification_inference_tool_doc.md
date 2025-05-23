@@ -1,4 +1,4 @@
-# PyCaret Inference Tool Documentation
+# PyCaret Classification Inference Tool Documentation
 
 ## Overview
 
