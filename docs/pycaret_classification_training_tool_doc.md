@@ -1,4 +1,4 @@
-# PyCaret Classification Tool Documentation
+# PyCaret Classification Training Tool Documentation
 
 ## Overview
 
