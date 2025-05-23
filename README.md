@@ -69,7 +69,7 @@ This makes it easy to explore and test the full functionality of mAIstro on any 
 
 ---
 
-## 📚 Tool Documentation
+## 📚 Tools Documentation
 
 The following tools are part of the mAIstro multi-agentic system. Each tool is described in detail in its own documentation file:
 
