@@ -74,7 +74,7 @@ This makes it easy to explore and test the full functionality of mAIstro on any 
 The following tools are part of the mAIstro multi-agentic system. Each tool is described in detail in its own documentation file:
 
 1. [Radiomics Tool](docs/pyradiomics_tool_doc.md)
-2. [EDA Tool](docs/eda_tool_doc.md)
+2. [Exploratory Data Analysis Tool](docs/eda_tool_doc.md)
 3. [Feature Selection Tool](docs/feature_selection_tool_doc.md)
 4. [nnUNet Training Tool](docs/nnUNet_training_tool_doc.md)
 5. [nnUNet Inference Tool](docs/nnUNet_inference_tool_doc.md)
