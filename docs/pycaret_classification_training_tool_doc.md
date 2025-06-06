@@ -2,7 +2,7 @@
 
 ## Overview
 
-The PyCaret Classification Tool provides an automated machine learning solution for classification problems. It leverages the powerful PyCaret library to prepare data, train multiple classification models, tune hyperparameters, blend top-performing models, and generate comprehensive visualizations and interpretations. The tool is designed to accelerate the machine learning workflow from data to deployment, enabling both beginners and experienced data scientists to build high-quality classification models efficiently.
+The PyCaret Classification Tool provides an automated machine learning solution for classification problems. It leverages the PyCaret library to prepare data, train multiple classification models, tune hyperparameters, blend top-performing models, and generate comprehensive visualizations and interpretations. The tool is designed to accelerate the machine learning workflow from data to deployment, enabling both beginners and experienced data scientists to build high-quality classification models efficiently.
 
 ## Key Features
 
