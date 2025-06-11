@@ -5323,13 +5323,22 @@ class PyCaretClassificationTool(Tool):
             os.makedirs(output_dir, exist_ok=True)
             log_file = os.path.join(output_dir, "pycaret_classification.log")
             
-            logging_format = '%(asctime)s - %(levelname)s - %(message)s'
-            logging.basicConfig(level=logging.INFO, 
-                               format=logging_format,
-                               handlers=[
-                                   logging.FileHandler(log_file),
-                                   logging.StreamHandler()
-                               ])
+            # Get logger and clear existing handlers
+            logger = logging.getLogger()
+            logger.setLevel(logging.INFO)
+            for handler in logger.handlers[:]:
+                logger.removeHandler(handler)
+            
+            # Create formatter and handlers
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setFormatter(formatter)
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+            
+            # Add handlers
+            logger.addHandler(file_handler)
+            logger.addHandler(console_handler)
             
             # Generate experiment name if not provided
             if experiment_name is None:
@@ -5389,26 +5398,6 @@ class PyCaretClassificationTool(Tool):
                 'log_experiment': False  # Set to False to avoid MLflow errors
             }
             
-            # Check if it's a compatible version to use experiment_logs
-            # For now, let's disable experiment logs altogether since it causes issues
-            # with MLflow in some environments
-            """
-            try:
-                import pycaret
-                pycaret_version = pycaret.__version__
-                logging.info(f"PyCaret version: {pycaret_version}")
-                
-                # Check if newer version that supports experiment_logs
-                from packaging import version
-                if version.parse(pycaret_version) >= version.parse('2.3.0'):
-                    setup_params['experiment_logs'] = os.path.join(output_dir, 'logs')
-            except (ImportError, AttributeError) as e:
-                logging.warning(f"Could not determine PyCaret version: {str(e)}")
-                logging.warning("Some parameters might not be compatible.")
-            except Exception as e:
-                logging.warning(f"Error checking PyCaret version: {str(e)}")
-                # Continue without adding version-specific parameters
-            """
             logging.info("Disabling experiment logging to avoid MLflow-related errors")
                 
             # Add optional parameters if provided
@@ -5554,7 +5543,6 @@ class PyCaretClassificationTool(Tool):
                     'auc', 'confusion_matrix', 'class_report', 'feature', 'boundary',
                     'pr', 'error', 'learning', 'manifold', 'calibration', 'vc', 'dimension', 
                     'feature_all', 'parameter', 'lift', 'gain']
-                
                 
                 model_plots = []
                 
@@ -5791,6 +5779,10 @@ class PyCaretClassificationTool(Tool):
                 logging.info("Only one model available, using it as the final model")
                 final_model = tuned_models[0] if tuned_models else best[0]
             
+            # Initialize default paths
+            final_model_path = None
+            summary_path = None
+            
             # Save the final model to the main output directory as well
             final_model_path = os.path.join(output_dir, f'{experiment_name}_final_model')
             try:
@@ -5799,6 +5791,7 @@ class PyCaretClassificationTool(Tool):
                 logging.info(f"Saved final model to {final_model_path}")
             except Exception as e:
                 logging.error(f"Error saving final model: {str(e)}")
+                final_model_path = None
             
             # Create summary report with links to all models and evaluations
             try:
@@ -5837,6 +5830,7 @@ class PyCaretClassificationTool(Tool):
                 logging.info(f"Created model summary at {summary_path}")
             except Exception as e:
                 logging.error(f"Error creating model summary: {str(e)}")
+                summary_path = None
             
             logging.info("Classification modeling completed successfully")
             
@@ -5848,7 +5842,7 @@ class PyCaretClassificationTool(Tool):
                 "final_model_path": final_model_path,
                 "individual_model_paths": individual_model_paths,
                 "model_test_predictions": model_test_predictions,
-                "model_summary": summary_path if 'summary_path' in locals() else None,
+                "model_summary": summary_path,
                 "log_file": log_file,
                 "created_files": created_files
             }
@@ -5930,17 +5924,6 @@ class PyCaretInferenceTool(Tool):
             Dictionary with inference results and file paths
         """
         try:
-            # Set up logging
-            logging_format = '%(asctime)s - %(levelname)s - %(message)s'
-            logging_level = logging.INFO if verbose else logging.WARNING
-            
-            # Clear any existing handlers to avoid duplicates
-            logging.getLogger().handlers = []
-            
-            logging.basicConfig(level=logging_level, 
-                               format=logging_format,
-                               handlers=[logging.StreamHandler()])
-            
             # Set output directory (default to input file directory if not specified)
             if output_dir is None:
                 output_dir = os.path.dirname(input_path)
@@ -5950,11 +5933,25 @@ class PyCaretInferenceTool(Tool):
             # Create output directory if it doesn't exist
             os.makedirs(output_dir, exist_ok=True)
             
-            # Set up log file in output directory
+            # Set up logging with fixed configuration
             log_file = os.path.join(output_dir, "pycaret_inference.log")
+            
+            # Get logger and clear existing handlers
+            logger = logging.getLogger()
+            logger.setLevel(logging.INFO if verbose else logging.WARNING)
+            for handler in logger.handlers[:]:
+                logger.removeHandler(handler)
+            
+            # Create formatter and handlers
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
             file_handler = logging.FileHandler(log_file)
-            file_handler.setFormatter(logging.Formatter(logging_format))
-            logging.getLogger().addHandler(file_handler)
+            file_handler.setFormatter(formatter)
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+            
+            # Add handlers
+            logger.addHandler(file_handler)
+            logger.addHandler(console_handler)
             
             logging.info(f"Starting inference using model: {model_path}")
             logging.info(f"Input data: {input_path}")
@@ -5985,6 +5982,7 @@ class PyCaretInferenceTool(Tool):
             
             # Check if ground truth column exists if specified
             has_ground_truth = False
+            original_ground_truth = None
             if ground_truth_column:
                 if ground_truth_column in data.columns:
                     has_ground_truth = True
@@ -6093,13 +6091,16 @@ class PyCaretInferenceTool(Tool):
                     "predictions": predictions  # Still return predictions in memory even if saving failed
                 }
             
-            # Calculate metrics if ground truth is available
+            # Initialize variables for metrics calculation
             metrics = {}
             metrics_df = None
             comparison_path = None
             confusion_matrix_path = None
+            metrics_csv_path = None
+            metrics_json_path = None
             
-            if has_ground_truth:
+            # Calculate metrics if ground truth is available
+            if has_ground_truth and original_ground_truth is not None:
                 logging.info(f"Calculating performance metrics using '{ground_truth_column}' as ground truth")
                 try:
                     # Get actual values using the stored ground truth
@@ -6290,7 +6291,6 @@ class PyCaretInferenceTool(Tool):
                                     
                                     # Calculate one-vs-rest AUC
                                     from sklearn.preprocessing import label_binarize
-                                    from sklearn.metrics import roc_auc_score
                                     
                                     # Convert y_true to one-hot encoding
                                     classes = sorted(unique_classes)
@@ -6342,8 +6342,8 @@ class PyCaretInferenceTool(Tool):
                 "log_file": log_file,
                 "metrics": metrics if metrics else None,
                 "metrics_df": metrics_df.to_dict('records')[0] if metrics_df is not None else None,
-                "metrics_csv_path": os.path.join(output_dir, "metrics_report.csv") if metrics_df is not None else None,
-                "metrics_json_path": os.path.join(output_dir, "metrics.json") if metrics else None,
+                "metrics_csv_path": metrics_csv_path,
+                "metrics_json_path": metrics_json_path,
                 "comparison_path": comparison_path,
                 "confusion_matrix_path": confusion_matrix_path,
                 "input_path": input_path,
@@ -6433,17 +6433,6 @@ class PyCaretRegressionInferenceTool(Tool):
             Dictionary with inference results and file paths
         """
         try:
-            # Set up logging
-            logging_format = '%(asctime)s - %(levelname)s - %(message)s'
-            logging_level = logging.INFO if verbose else logging.WARNING
-            
-            # Clear any existing handlers to avoid duplicates
-            logging.getLogger().handlers = []
-            
-            logging.basicConfig(level=logging_level, 
-                               format=logging_format,
-                               handlers=[logging.StreamHandler()])
-            
             # Set output directory (default to input file directory if not specified)
             if output_dir is None:
                 output_dir = os.path.dirname(input_path)
@@ -6453,11 +6442,25 @@ class PyCaretRegressionInferenceTool(Tool):
             # Create output directory if it doesn't exist
             os.makedirs(output_dir, exist_ok=True)
             
-            # Set up log file in output directory
+            # Set up logging with fixed configuration
             log_file = os.path.join(output_dir, "pycaret_regression_inference.log")
+            
+            # Get logger and clear existing handlers
+            logger = logging.getLogger()
+            logger.setLevel(logging.INFO if verbose else logging.WARNING)
+            for handler in logger.handlers[:]:
+                logger.removeHandler(handler)
+            
+            # Create formatter and handlers
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
             file_handler = logging.FileHandler(log_file)
-            file_handler.setFormatter(logging.Formatter(logging_format))
-            logging.getLogger().addHandler(file_handler)
+            file_handler.setFormatter(formatter)
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+            
+            # Add handlers
+            logger.addHandler(file_handler)
+            logger.addHandler(console_handler)
             
             logging.info(f"Starting inference using model: {model_path}")
             logging.info(f"Input data: {input_path}")
@@ -6488,6 +6491,7 @@ class PyCaretRegressionInferenceTool(Tool):
             
             # Check if ground truth column exists if specified
             has_ground_truth = False
+            original_ground_truth = None
             if ground_truth_column:
                 if ground_truth_column in data.columns:
                     has_ground_truth = True
@@ -6590,13 +6594,16 @@ class PyCaretRegressionInferenceTool(Tool):
                     "predictions": predictions  # Still return predictions in memory even if saving failed
                 }
             
-            # Calculate metrics if ground truth is available
+            # Initialize variables for metrics calculation
             metrics = {}
             metrics_df = None
             comparison_path = None
             residuals_path = None
+            metrics_csv_path = None
+            metrics_json_path = None
             
-            if has_ground_truth:
+            # Calculate metrics if ground truth is available
+            if has_ground_truth and original_ground_truth is not None:
                 logging.info(f"Calculating performance metrics using '{ground_truth_column}' as ground truth")
                 try:
                     # Get actual values using the stored ground truth
@@ -6649,7 +6656,10 @@ class PyCaretRegressionInferenceTool(Tool):
                     # Try to calculate MAPE with handling for zero values
                     try:
                         # Calculate MAPE only on non-zero actual values
-                        mape = mean_absolute_percentage_error(y_true[nonzero_idx], y_pred[nonzero_idx]) * 100
+                        if np.any(nonzero_idx):
+                            mape = mean_absolute_percentage_error(y_true[nonzero_idx], y_pred[nonzero_idx]) * 100
+                        else:
+                            mape = np.nan
                     except Exception as e:
                         logging.warning(f"Could not calculate MAPE: {str(e)}")
                         mape = np.nan
@@ -6723,8 +6733,8 @@ class PyCaretRegressionInferenceTool(Tool):
                 "log_file": log_file,
                 "metrics": metrics if metrics else None,
                 "metrics_df": metrics_df.to_dict('records')[0] if metrics_df is not None else None,
-                "metrics_csv_path": os.path.join(output_dir, "metrics_report.csv") if metrics_df is not None else None,
-                "metrics_json_path": os.path.join(output_dir, "metrics.json") if metrics else None,
+                "metrics_csv_path": metrics_csv_path,
+                "metrics_json_path": metrics_json_path,
                 "comparison_path": comparison_path,
                 "residuals_path": residuals_path,
                 "input_path": input_path,
@@ -6953,13 +6963,22 @@ class PyCaretRegressionTool(Tool):
             os.makedirs(output_dir, exist_ok=True)
             log_file = os.path.join(output_dir, "pycaret_regression.log")
             
-            logging_format = '%(asctime)s - %(levelname)s - %(message)s'
-            logging.basicConfig(level=logging.INFO, 
-                               format=logging_format,
-                               handlers=[
-                                   logging.FileHandler(log_file),
-                                   logging.StreamHandler()
-                               ])
+            # Get logger and clear existing handlers
+            logger = logging.getLogger()
+            logger.setLevel(logging.INFO)
+            for handler in logger.handlers[:]:
+                logger.removeHandler(handler)
+            
+            # Create formatter and handlers
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setFormatter(formatter)
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+            
+            # Add handlers
+            logger.addHandler(file_handler)
+            logger.addHandler(console_handler)
             
             # Generate experiment name if not provided
             if experiment_name is None:
@@ -7158,18 +7177,6 @@ class PyCaretRegressionTool(Tool):
             created_files.append(('Model Comparison Results', compare_results_path))
             logging.info(f"Saved model comparison results to {compare_results_path}")
             
-            # Create a function to safely save plots
-            def save_plot_safely(plot_obj, file_path, plot_type, created_files):
-                try:
-                    # Save the figure with explicit filepath
-                    plot_obj.savefig(file_path, bbox_inches='tight', dpi=300)
-                    created_files.append((f'Plot: {plot_type}', file_path))
-                    logging.info(f"Created {plot_type} plot at {file_path}")
-                    return True
-                except Exception as e:
-                    logging.warning(f"Could not save {plot_type} plot to {file_path}: {str(e)}")
-                    return False
-            
             # Define a function to create plots for a model
             def create_plots_for_model(model, plots_dir, created_files):
                 # Store the original working directory
@@ -7184,7 +7191,6 @@ class PyCaretRegressionTool(Tool):
                     plot_types = [
                         'residuals', 'error', 'cooks', 'learning',
                         'vc', 'feature', 'feature_all', 'parameter']
-                    
                     
                     model_plots = []
                     
@@ -7352,8 +7358,6 @@ class PyCaretRegressionTool(Tool):
             
             # Create a blended model if we have multiple tuned models
             blended_model = None
-            blended_model_path = None
-            blended_test_pred_path = None
             
             if len(tuned_models) > 1:
                 logging.info("Creating blended model from tuned models")
@@ -7412,6 +7416,9 @@ class PyCaretRegressionTool(Tool):
                 logging.info("Only one model available, using it as the final model")
                 final_model = tuned_models[0] if tuned_models else best[0]
             
+            # Initialize final model path
+            final_model_path = None
+            
             # Save the final model to the main output directory as well
             final_model_path = os.path.join(output_dir, f'{experiment_name}_final_model')
             try:
@@ -7420,6 +7427,10 @@ class PyCaretRegressionTool(Tool):
                 logging.info(f"Saved final model to {final_model_path}")
             except Exception as e:
                 logging.error(f"Error saving final model: {str(e)}")
+                final_model_path = None
+            
+            # Initialize summary path
+            summary_path = None
             
             # Create summary report with links to all models and evaluations
             try:
@@ -7457,7 +7468,8 @@ class PyCaretRegressionTool(Tool):
                 created_files.append(('Model Summary', summary_path))
                 logging.info(f"Created model summary at {summary_path}")
             except Exception as e:
-                    logging.error(f"Error creating model summary: {str(e)}")
+                logging.error(f"Error creating model summary: {str(e)}")
+                summary_path = None
 
             logging.info("Regression modeling completed successfully")
 
@@ -7469,19 +7481,19 @@ class PyCaretRegressionTool(Tool):
                 "final_model_path": final_model_path,
                 "individual_model_paths": individual_model_paths,
                 "model_test_predictions": model_test_predictions,
-                "model_summary": summary_path if 'summary_path' in locals() else None,
+                "model_summary": summary_path,
                 "log_file": log_file,
                 "created_files": created_files
             }
 
         except Exception as e:
-                logging.error(f"Error in PyCaret regression: {str(e)}", exc_info=True)
-                return {
-                    "status": "error",
-                    "error_message": str(e),
-                    "input_path": input_path,
-                    "output_dir": output_dir
-                }
+            logging.error(f"Error in PyCaret regression: {str(e)}", exc_info=True)
+            return {
+                "status": "error",
+                "error_message": str(e),
+                "input_path": input_path,
+                "output_dir": output_dir
+            }
 
 #Image Classification Model Training and Inference Tool
 
@@ -7665,14 +7677,23 @@ class PyTorchResNetTrainingTool(Tool):
             # Set up logging
             os.makedirs(output_dir, exist_ok=True)
             log_file = os.path.join(output_dir, "training.log")
-            logging.basicConfig(
-                level=logging.INFO,
-                format='%(asctime)s - %(levelname)s - %(message)s',
-                handlers=[
-                    logging.FileHandler(log_file),
-                    logging.StreamHandler()
-                ]
-            )
+            
+            # Get logger and clear existing handlers
+            logger = logging.getLogger()
+            logger.setLevel(logging.INFO)
+            for handler in logger.handlers[:]:
+                logger.removeHandler(handler)
+            
+            # Create formatter and handlers
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setFormatter(formatter)
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+            
+            # Add handlers
+            logger.addHandler(file_handler)
+            logger.addHandler(console_handler)
             
             # Log configuration
             logging.info(f"Starting ResNet training with configuration:")
@@ -7816,7 +7837,7 @@ class PyTorchResNetTrainingTool(Tool):
             criterion = nn.CrossEntropyLoss()
             optimizer = optim.Adam(model.parameters(), lr=0.001)
             
-            # Learning rate scheduler (removed verbose parameter)
+            # Learning rate scheduler
             scheduler = optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer, 'min', patience=2, factor=0.5
             )
@@ -7825,6 +7846,7 @@ class PyTorchResNetTrainingTool(Tool):
             best_val_loss = float('inf')
             best_val_acc = 0.0
             patience_counter = 0
+            best_epoch = 0
             
             # Training history
             history = {
@@ -7915,6 +7937,7 @@ class PyTorchResNetTrainingTool(Tool):
                 if epoch_val_acc > best_val_acc:
                     best_val_acc = epoch_val_acc
                     best_val_loss = epoch_val_loss
+                    best_epoch = epoch
                     patience_counter = 0
                     
                     # Save best model
@@ -7949,9 +7972,21 @@ class PyTorchResNetTrainingTool(Tool):
                 'accuracy': epoch_val_acc
             }, final_model_path)
             
-            # If test directory exists, evaluate on test set
+            # Variables to track test results
+            test_acc = None
+            metrics_path = None
+            cm_path = None
+            
+            # If test directory exists, evaluate on test set using best model
             if os.path.exists(test_dir):
                 logging.info("Evaluating model on test set...")
+                
+                # Load best model for testing
+                if os.path.exists(best_model_path):
+                    checkpoint = torch.load(best_model_path, map_location=device)
+                    model.load_state_dict(checkpoint['model_state_dict'])
+                    logging.info(f"Loaded best model from epoch {checkpoint['epoch']} for testing")
+                
                 # Create test dataset and dataloader
                 if use_csv_labels:
                     test_labels_file = os.path.join(data_dir, 'test_labels.csv')
@@ -8066,6 +8101,7 @@ class PyTorchResNetTrainingTool(Tool):
             plt.tight_layout()
             plots_path = os.path.join(output_dir, "training_plots.png")
             plt.savefig(plots_path)
+            plt.close()
             
             # Save model configuration
             config = {
@@ -8075,7 +8111,7 @@ class PyTorchResNetTrainingTool(Tool):
                 'pretrained': pretrained,
                 'early_stopping': early_stopping,
                 'patience': patience if early_stopping else None,
-                'best_epoch': epoch,
+                'best_epoch': best_epoch,
                 'best_accuracy': best_val_acc,
                 'training_epochs': epoch + 1,
                 'early_stopped': early_stopping and patience_counter >= patience,
@@ -8094,10 +8130,10 @@ class PyTorchResNetTrainingTool(Tool):
                 "config_path": config_path,
                 "plots_path": plots_path,
                 "history_path": history_path,
-                "test_metrics_path": metrics_path if 'metrics_path' in locals() else None,
-                "confusion_matrix_path": cm_path if 'cm_path' in locals() else None,
+                "test_metrics_path": metrics_path,
+                "confusion_matrix_path": cm_path,
                 "best_accuracy": best_val_acc,
-                "test_accuracy": test_acc if 'test_acc' in locals() else None,
+                "test_accuracy": test_acc,
                 "training_time_seconds": total_time,
                 "epochs_completed": epoch + 1,
                 "early_stopped": early_stopping and patience_counter >= patience,
@@ -8159,8 +8195,8 @@ class PyTorchResNetInferenceTool(Tool):
         },
         "model_type": {
             "type": "string",
-            "description": "ResNet model type (will use config value if not specified)",
-            "required": False,
+            "description": "ResNet model type",
+            "required": True,
             "nullable": True
         },
         "batch_size": {
@@ -8230,14 +8266,23 @@ class PyTorchResNetInferenceTool(Tool):
             # Set up logging
             os.makedirs(output_dir, exist_ok=True)
             log_file = os.path.join(output_dir, "inference.log")
-            logging.basicConfig(
-                level=logging.INFO,
-                format='%(asctime)s - %(levelname)s - %(message)s',
-                handlers=[
-                    logging.FileHandler(log_file),
-                    logging.StreamHandler()
-                ]
-            )
+            
+            # Get logger and clear existing handlers
+            logger = logging.getLogger()
+            logger.setLevel(logging.INFO)
+            for handler in logger.handlers[:]:
+                logger.removeHandler(handler)
+            
+            # Create formatter and handlers
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setFormatter(formatter)
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+            
+            # Add handlers
+            logger.addHandler(file_handler)
+            logger.addHandler(console_handler)
             
             # Load model configuration if provided
             model_config = {}
@@ -8331,8 +8376,11 @@ class PyTorchResNetInferenceTool(Tool):
             model = model.to(device)
             model.eval()
             
-            # Load ground truth labels if provided
+            # Initialize variables for ground truth processing
             ground_truth = {}
+            filename_to_case = {}
+            
+            # Load ground truth labels if provided
             if ground_truth_file and os.path.exists(ground_truth_file):
                 logging.info(f"Loading ground truth data from {ground_truth_file}")
                 try:
@@ -8370,6 +8418,7 @@ class PyTorchResNetInferenceTool(Tool):
                     logging.error(f"Error loading ground truth file: {str(e)}")
                     logging.warning("Will continue without ground truth evaluation")
                     ground_truth = {}
+                    filename_to_case = {}
             
             # Get list of all image files
             image_files = [f for f in os.listdir(image_dir) 
@@ -8430,7 +8479,7 @@ class PyTorchResNetInferenceTool(Tool):
                     # Store predictions
                     for i, (filename, pred_class, probs) in enumerate(zip(valid_files, batch_preds, batch_probs)):
                         # Get corresponding case ID if available
-                        case_id = filename_to_case.get(filename, filename) if 'filename_to_case' in locals() else filename
+                        case_id = filename_to_case.get(filename, filename)
                         
                         result = {
                             'filename': filename,
@@ -8628,7 +8677,7 @@ class PyTorchResNetInferenceTool(Tool):
                 "metrics": metrics if metrics else None,
                 "metrics_path": metrics_path,
                 "confusion_matrix_path": cm_path,
-                "roc_curve_path": roc_path if 'roc_path' in locals() else None,
+                "roc_curve_path": roc_path,
                 "image_dir": image_dir,
                 "model_path": model_path,
                 "output_dir": output_dir,
@@ -8744,14 +8793,23 @@ class PyTorchInceptionV3TrainingTool(Tool):
             # Set up logging
             os.makedirs(output_dir, exist_ok=True)
             log_file = os.path.join(output_dir, "training.log")
-            logging.basicConfig(
-                level=logging.INFO,
-                format='%(asctime)s - %(levelname)s - %(message)s',
-                handlers=[
-                    logging.FileHandler(log_file),
-                    logging.StreamHandler()
-                ]
-            )
+            
+            # Get logger and clear existing handlers
+            logger = logging.getLogger()
+            logger.setLevel(logging.INFO)
+            for handler in logger.handlers[:]:
+                logger.removeHandler(handler)
+            
+            # Create formatter and handlers
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setFormatter(formatter)
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+            
+            # Add handlers
+            logger.addHandler(file_handler)
+            logger.addHandler(console_handler)
             
             # Log configuration
             logging.info(f"Starting Inception V3 training with configuration:")
@@ -8804,9 +8862,7 @@ class PyTorchInceptionV3TrainingTool(Tool):
                 train_dataset = MedicalImageDataset(
                     image_dir=train_dir,
                     labels_file=train_labels_file,
-                    transform=train_transform,
-                    is_test=False,
-                    image_size=inception_image_size  # Inception V3 requires 299x299
+                    transform=train_transform
                 )
                 
                 if not use_train_val_split:
@@ -8817,9 +8873,7 @@ class PyTorchInceptionV3TrainingTool(Tool):
                     val_dataset = MedicalImageDataset(
                         image_dir=val_dir,
                         labels_file=val_labels_file,
-                        transform=val_transform,
-                        is_test=False,
-                        image_size=inception_image_size  # Inception V3 requires 299x299
+                        transform=val_transform
                     )
             else:
                 # Using directory structure (each class in its own subdirectory)
@@ -8898,6 +8952,7 @@ class PyTorchInceptionV3TrainingTool(Tool):
             # Track best model
             best_val_loss = float('inf')
             best_val_acc = 0.0
+            best_epoch = 0
             patience_counter = 0
             
             # Training history
@@ -9003,6 +9058,7 @@ class PyTorchInceptionV3TrainingTool(Tool):
                 if epoch_val_acc > best_val_acc:
                     best_val_acc = epoch_val_acc
                     best_val_loss = epoch_val_loss
+                    best_epoch = epoch
                     patience_counter = 0
                     
                     # Save best model
@@ -9037,9 +9093,21 @@ class PyTorchInceptionV3TrainingTool(Tool):
                 'accuracy': epoch_val_acc
             }, final_model_path)
             
-            # If test directory exists, evaluate on test set
+            # Variables to track test results
+            test_acc = None
+            metrics_path = None
+            cm_path = None
+            
+            # If test directory exists, evaluate on test set using best model
             if os.path.exists(test_dir):
                 logging.info("Evaluating model on test set...")
+                
+                # Load best model for testing
+                if os.path.exists(best_model_path):
+                    checkpoint = torch.load(best_model_path, map_location=device)
+                    model.load_state_dict(checkpoint['model_state_dict'])
+                    logging.info(f"Loaded best model from epoch {checkpoint['epoch']} for testing")
+                
                 # Create test dataset and dataloader
                 if use_csv_labels:
                     test_labels_file = os.path.join(data_dir, 'test_labels.csv')
@@ -9049,9 +9117,7 @@ class PyTorchInceptionV3TrainingTool(Tool):
                     test_dataset = MedicalImageDataset(
                         image_dir=test_dir,
                         labels_file=test_labels_file,
-                        transform=val_transform,  # Use the same transform as validation
-                        is_test=False,
-                        image_size=inception_image_size  # Inception V3 requires 299x299
+                        transform=val_transform  # Use the same transform as validation
                     )
                 else:
                     test_dataset = datasets.ImageFolder(
@@ -9161,6 +9227,7 @@ class PyTorchInceptionV3TrainingTool(Tool):
             plt.tight_layout()
             plots_path = os.path.join(output_dir, "training_plots.png")
             plt.savefig(plots_path)
+            plt.close()
             
             # Save model configuration
             config = {
@@ -9170,7 +9237,7 @@ class PyTorchInceptionV3TrainingTool(Tool):
                 'pretrained': pretrained,
                 'early_stopping': early_stopping,
                 'patience': patience if early_stopping else None,
-                'best_epoch': epoch,
+                'best_epoch': best_epoch,
                 'best_accuracy': best_val_acc,
                 'training_epochs': epoch + 1,
                 'early_stopped': early_stopping and patience_counter >= patience,
@@ -9190,10 +9257,10 @@ class PyTorchInceptionV3TrainingTool(Tool):
                 "config_path": config_path,
                 "plots_path": plots_path,
                 "history_path": history_path,
-                "test_metrics_path": metrics_path if 'metrics_path' in locals() else None,
-                "confusion_matrix_path": cm_path if 'cm_path' in locals() else None,
+                "test_metrics_path": metrics_path,
+                "confusion_matrix_path": cm_path,
                 "best_accuracy": best_val_acc,
-                "test_accuracy": test_acc if 'test_acc' in locals() else None,
+                "test_accuracy": test_acc,
                 "training_time_seconds": total_time,
                 "epochs_completed": epoch + 1,
                 "early_stopped": early_stopping and patience_counter >= patience,
@@ -9327,14 +9394,23 @@ class PyTorchInceptionV3InferenceTool(Tool):
             # Set up logging
             os.makedirs(output_dir, exist_ok=True)
             log_file = os.path.join(output_dir, "inference.log")
-            logging.basicConfig(
-                level=logging.INFO,
-                format='%(asctime)s - %(levelname)s - %(message)s',
-                handlers=[
-                    logging.FileHandler(log_file),
-                    logging.StreamHandler()
-                ]
-            )
+            
+            # Get logger and clear existing handlers
+            logger = logging.getLogger()
+            logger.setLevel(logging.INFO)
+            for handler in logger.handlers[:]:
+                logger.removeHandler(handler)
+            
+            # Create formatter and handlers
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setFormatter(formatter)
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+            
+            # Add handlers
+            logger.addHandler(file_handler)
+            logger.addHandler(console_handler)
             
             # Load model configuration if provided
             model_config = {}
@@ -9426,8 +9502,11 @@ class PyTorchInceptionV3InferenceTool(Tool):
             model = model.to(device)
             model.eval()
             
-            # Load ground truth labels if provided
+            # Initialize variables for ground truth processing
             ground_truth = {}
+            filename_to_case = {}
+            
+            # Load ground truth labels if provided
             if ground_truth_file and os.path.exists(ground_truth_file):
                 logging.info(f"Loading ground truth data from {ground_truth_file}")
                 try:
@@ -9465,11 +9544,12 @@ class PyTorchInceptionV3InferenceTool(Tool):
                     logging.error(f"Error loading ground truth file: {str(e)}")
                     logging.warning("Will continue without ground truth evaluation")
                     ground_truth = {}
+                    filename_to_case = {}
             
             # Get list of all image files
             image_files = [f for f in os.listdir(image_dir) 
                          if os.path.isfile(os.path.join(image_dir, f)) and 
-                         f.lower().endswith(('png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff'))]
+                         f.lower().endswith(('png', 'jpg', 'jpeg', 'bmp', 'tif', 'tiff'))]
             
             if not image_files:
                 logging.error(f"No valid image files found in {image_dir}")
@@ -9532,7 +9612,7 @@ class PyTorchInceptionV3InferenceTool(Tool):
                         # Store predictions
                         for i, (filename, pred_class, probs) in enumerate(zip(valid_files, batch_preds, batch_probs)):
                             # Get corresponding case ID if available
-                            case_id = filename_to_case.get(filename, filename) if 'filename_to_case' in locals() else filename
+                            case_id = filename_to_case.get(filename, filename)
                             
                             result = {
                                 'filename': filename,
@@ -9737,7 +9817,7 @@ class PyTorchInceptionV3InferenceTool(Tool):
                 "metrics": metrics if metrics else None,
                 "metrics_path": metrics_path,
                 "confusion_matrix_path": cm_path,
-                "roc_curve_path": roc_path if 'roc_path' in locals() else None,
+                "roc_curve_path": roc_path,
                 "image_dir": image_dir,
                 "model_path": model_path,
                 "output_dir": output_dir,
@@ -9855,14 +9935,23 @@ class PyTorchVGG16TrainingTool(Tool):
             # Set up logging
             os.makedirs(output_dir, exist_ok=True)
             log_file = os.path.join(output_dir, "training.log")
-            logging.basicConfig(
-                level=logging.INFO,
-                format='%(asctime)s - %(levelname)s - %(message)s',
-                handlers=[
-                    logging.FileHandler(log_file),
-                    logging.StreamHandler()
-                ]
-            )
+            
+            # Get logger and clear existing handlers
+            logger = logging.getLogger()
+            logger.setLevel(logging.INFO)
+            for handler in logger.handlers[:]:
+                logger.removeHandler(handler)
+            
+            # Create formatter and handlers
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setFormatter(formatter)
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+            
+            # Add handlers
+            logger.addHandler(file_handler)
+            logger.addHandler(console_handler)
             
             # Log configuration
             logging.info(f"Starting VGG16 training with configuration:")
@@ -9915,9 +10004,7 @@ class PyTorchVGG16TrainingTool(Tool):
                 train_dataset = MedicalImageDataset(
                     image_dir=train_dir,
                     labels_file=train_labels_file,
-                    transform=train_transform,
-                    is_test=False,
-                    image_size=vgg_image_size
+                    transform=train_transform
                 )
                 
                 if not use_train_val_split:
@@ -9928,9 +10015,7 @@ class PyTorchVGG16TrainingTool(Tool):
                     val_dataset = MedicalImageDataset(
                         image_dir=val_dir,
                         labels_file=val_labels_file,
-                        transform=val_transform,
-                        is_test=False,
-                        image_size=vgg_image_size
+                        transform=val_transform
                     )
             else:
                 # Using directory structure (each class in its own subdirectory)
@@ -10016,6 +10101,7 @@ class PyTorchVGG16TrainingTool(Tool):
             # Track best model
             best_val_loss = float('inf')
             best_val_acc = 0.0
+            best_epoch = 0
             patience_counter = 0
             
             # Training history
@@ -10107,6 +10193,7 @@ class PyTorchVGG16TrainingTool(Tool):
                 if epoch_val_acc > best_val_acc:
                     best_val_acc = epoch_val_acc
                     best_val_loss = epoch_val_loss
+                    best_epoch = epoch
                     patience_counter = 0
                     
                     # Save best model
@@ -10141,9 +10228,21 @@ class PyTorchVGG16TrainingTool(Tool):
                 'accuracy': epoch_val_acc
             }, final_model_path)
             
-            # If test directory exists, evaluate on test set
+            # Variables to track test results
+            test_acc = None
+            metrics_path = None
+            cm_path = None
+            
+            # If test directory exists, evaluate on test set using best model
             if os.path.exists(test_dir):
                 logging.info("Evaluating model on test set...")
+                
+                # Load best model for testing
+                if os.path.exists(best_model_path):
+                    checkpoint = torch.load(best_model_path, map_location=device)
+                    model.load_state_dict(checkpoint['model_state_dict'])
+                    logging.info(f"Loaded best model from epoch {checkpoint['epoch']} for testing")
+                
                 # Create test dataset and dataloader
                 if use_csv_labels:
                     test_labels_file = os.path.join(data_dir, 'test_labels.csv')
@@ -10153,9 +10252,7 @@ class PyTorchVGG16TrainingTool(Tool):
                     test_dataset = MedicalImageDataset(
                         image_dir=test_dir,
                         labels_file=test_labels_file,
-                        transform=val_transform,  # Use the same transform as validation
-                        is_test=False,
-                        image_size=vgg_image_size
+                        transform=val_transform  # Use the same transform as validation
                     )
                 else:
                     test_dataset = datasets.ImageFolder(
@@ -10260,6 +10357,7 @@ class PyTorchVGG16TrainingTool(Tool):
             plt.tight_layout()
             plots_path = os.path.join(output_dir, "training_plots.png")
             plt.savefig(plots_path)
+            plt.close()
             
             # Save model configuration
             model_type = "vgg16_bn" if use_batch_norm else "vgg16"
@@ -10270,7 +10368,7 @@ class PyTorchVGG16TrainingTool(Tool):
                 'pretrained': pretrained,
                 'early_stopping': early_stopping,
                 'patience': patience if early_stopping else None,
-                'best_epoch': epoch,
+                'best_epoch': best_epoch,
                 'best_accuracy': best_val_acc,
                 'training_epochs': epoch + 1,
                 'early_stopped': early_stopping and patience_counter >= patience,
@@ -10290,10 +10388,10 @@ class PyTorchVGG16TrainingTool(Tool):
                 "config_path": config_path,
                 "plots_path": plots_path,
                 "history_path": history_path,
-                "test_metrics_path": metrics_path if 'metrics_path' in locals() else None,
-                "confusion_matrix_path": cm_path if 'cm_path' in locals() else None,
+                "test_metrics_path": metrics_path,
+                "confusion_matrix_path": cm_path,
                 "best_accuracy": best_val_acc,
-                "test_accuracy": test_acc if 'test_acc' in locals() else None,
+                "test_accuracy": test_acc,
                 "training_time_seconds": total_time,
                 "epochs_completed": epoch + 1,
                 "early_stopped": early_stopping and patience_counter >= patience,
@@ -10428,14 +10526,23 @@ class PyTorchVGG16InferenceTool(Tool):
             # Set up logging
             os.makedirs(output_dir, exist_ok=True)
             log_file = os.path.join(output_dir, "inference.log")
-            logging.basicConfig(
-                level=logging.INFO,
-                format='%(asctime)s - %(levelname)s - %(message)s',
-                handlers=[
-                    logging.FileHandler(log_file),
-                    logging.StreamHandler()
-                ]
-            )
+            
+            # Get logger and clear existing handlers
+            logger = logging.getLogger()
+            logger.setLevel(logging.INFO)
+            for handler in logger.handlers[:]:
+                logger.removeHandler(handler)
+            
+            # Create formatter and handlers
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setFormatter(formatter)
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+            
+            # Add handlers
+            logger.addHandler(file_handler)
+            logger.addHandler(console_handler)
             
             # Load model configuration if provided
             model_config = {}
@@ -10525,8 +10632,11 @@ class PyTorchVGG16InferenceTool(Tool):
             model = model.to(device)
             model.eval()
             
-            # Load ground truth labels if provided
+            # Initialize variables for ground truth processing
             ground_truth = {}
+            filename_to_case = {}
+            
+            # Load ground truth labels if provided
             if ground_truth_file and os.path.exists(ground_truth_file):
                 logging.info(f"Loading ground truth data from {ground_truth_file}")
                 try:
@@ -10564,6 +10674,7 @@ class PyTorchVGG16InferenceTool(Tool):
                     logging.error(f"Error loading ground truth file: {str(e)}")
                     logging.warning("Will continue without ground truth evaluation")
                     ground_truth = {}
+                    filename_to_case = {}
             
             # Get list of all image files
             image_files = [f for f in os.listdir(image_dir) 
@@ -10624,7 +10735,7 @@ class PyTorchVGG16InferenceTool(Tool):
                     # Store predictions
                     for i, (filename, pred_class, probs) in enumerate(zip(valid_files, batch_preds, batch_probs)):
                         # Get corresponding case ID if available
-                        case_id = filename_to_case.get(filename, filename) if 'filename_to_case' in locals() else filename
+                        case_id = filename_to_case.get(filename, filename)
                         
                         result = {
                             'filename': filename,
@@ -10822,7 +10933,7 @@ class PyTorchVGG16InferenceTool(Tool):
                 "metrics": metrics if metrics else None,
                 "metrics_path": metrics_path,
                 "confusion_matrix_path": cm_path,
-                "roc_curve_path": roc_path if 'roc_path' in locals() else None,
+                "roc_curve_path": roc_path,
                 "image_dir": image_dir,
                 "model_path": model_path,
                 "output_dir": output_dir,
@@ -10843,4 +10954,3 @@ class PyTorchVGG16InferenceTool(Tool):
                 "model_path": model_path,
                 "output_dir": output_dir
             }
-
