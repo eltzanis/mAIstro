@@ -67,6 +67,11 @@ A pre-configured cell is provided with options for multiple LLM providers – ju
 
 This makes it easy to explore and test the full functionality of mAIstro on any device, using just your browser.
 
+### 📹 Tutorial Video - mAIstro on Colab
+
+[Watch the demo on Google Drive](https://drive.google.com/file/d/1EE4cgs0QOk4S_yT6aKBtHO8Bn8lvhn6A/view?usp=drive_link)
+
+
 ---
 
 ## 📚 Tools Documentation
