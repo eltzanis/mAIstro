@@ -43,7 +43,7 @@ The system will automatically:
 - Launch the **mAIstro Desktop App**
 
 ⚠️ **Note:**  
-The **first launch** may take up to **10 minutes**, as dependencies are installed.  
+The **first launch** may take up to **15 minutes**, as dependencies are installed.  
 Subsequent launches will start instantly.
 
 ---
