@@ -50,7 +50,7 @@ Subsequent launches will start instantly.
 
 ## 💡 Tips
 
-- Keep the folder name simple (e.g., `mAIstro_Desktop`) and avoid spaces in the path.  
+- Avoid spaces in the path.  
 - Ensure at least **20 GB** of free disk space.  
 - Internet connection is required during the first setup.  
 - You can switch between LLMs anytime by updating your API key in the app’s settings.  
@@ -72,7 +72,7 @@ Subsequent launches will start instantly.
 ## 🤖 About mAIstro
 
 The **mAIstro framework** is a modular, agentic AI system designed to automate the development of medical imaging workflows.  
-It integrates tools for **segmentation**, **feature extraction (PyRadiomics)**, **model training (nnU-Net, PyTorch)**, and **explainability**, all orchestrated through intelligent **multi-agent reasoning pipelines**.
+It integrates tools for **segmentation**, **feature extraction**, **model training**, and **explainability**, all orchestrated through intelligent **multi-agent reasoning pipelines**.
 
 With **mAIstro Desktop**, you can explore this ecosystem directly on your computer through a single, unified, and intuitive interface.
 
