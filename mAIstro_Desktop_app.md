@@ -25,7 +25,7 @@ From **radiomic feature extraction** to **segmentation**, **classification**, **
 
 ## 📦 Installation & Launch
 
-1. **Download** the ZIP file from the official release page:  
+1. **Download** the ZIP file:  
    👉 [Download mAIstro Desktop for Windows](<https://drive.google.com/file/d/1wd4is1-EA21V5SFyz9RuGhs4r31w9hQI/view?usp=sharing>)
 
 2. **Unzip** the file anywhere on your computer (recommended: Desktop).  
