@@ -23,6 +23,27 @@ From **radiomic feature extraction** to **segmentation**, **classification**, **
 
 ---
 
+🧰 Prerequisite: Install the Required Compiler
+
+Before running mAIstro for the first time, make sure the Microsoft C++ Build Tools are installed on your system.
+
+1. Go to the official Microsoft page:
+    👉 https://visualstudio.microsoft.com/visual-cpp-build-tools/
+
+2. Download Build Tools for Visual Studio.
+
+3. During installation, select:
+
+    ✅ “Desktop development with C++”
+
+    Under Optional components, make sure these are checked:
+
+     - MSVC v143 (or newer)
+
+     - Windows 10/11 SDK
+
+---
+
 ## 📦 Installation & Launch
 
 1. **Download** the ZIP file:  
