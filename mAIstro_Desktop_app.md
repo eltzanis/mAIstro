@@ -23,7 +23,7 @@ From **radiomic feature extraction** to **segmentation**, **classification**, **
 
 ---
 
-🧰 Prerequisite: Install the Required Compiler
+## 🧰 Prerequisite: Install the Required Compiler
 
 Before running mAIstro for the first time, make sure the Microsoft C++ Build Tools are installed on your system.
 
