@@ -31,11 +31,29 @@ Built around a team of specialized agents, mAIstro enables researchers and clini
 
 ---
 
-## ⚙️ Instructions to Set Up Docker and Run the mAIstro Environment
+## 🎉 mAIstro Desktop App is Here!
+
+Experience the power of mAIstro - your intelligent desktop assistant for building complete AI pipelines in medical imaging.
+
+From radiomic feature extraction to the development, evaluation, and deployment of segmentation, classification, and regression AI models, everything happens right on your desktop by simply chatting with mAIstro.
+
+👉 [Learn more and get download & installation instructions](./mAIstro_Desktop_app.md)
+
+
+<p align="center">
+  <img src="mAIstro_desktop_app.png" alt="mAIstro Logo" width="1200"/>
+</p>
+
+---
+
+
+## ⚙️ Using mAIstro with Docker - Setup and Run Instructions
 
 👉 [Instructions to set up Docker and run mAIstro](./install_mAIstro_env.md)
 
 ---
+
+
 ## 🔗 Run mAIstro instantly on Google Colab
 
 Want to try mAIstro without setting up anything locally?
