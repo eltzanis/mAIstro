@@ -2,7 +2,7 @@
   <img src="mAIstro_logo.png" alt="mAIstro Logo" width="300"/>
 </p>
 
-> An open-source multi-agentic system for automated end-to-end development of radiomics and deep learning models for medical imaging
+> An open-source multi-agent system for automated end-to-end development of radiomics and deep learning models for medical imaging
 
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 
