@@ -12,7 +12,7 @@ From **radiomic feature extraction** to **segmentation**, **classification**, **
 - 💬 **Chat-based AI development:** Build medical AI pipelines through natural language interaction.  
 - 🧩 **End-to-end automation:** Perform **radiomic feature extraction**, **segmentation**, **classification**, **regression**, and **AI model development** in one place.  
 - 🧠 **Choose your reasoning engine:** Select between multiple **Large Language Models (LLMs)** as mAIstro’s core engine:
-  - GPT-4.1  
+  - GPT-4.1 **(Recommended)** 
   - GPT-4.0  
   - Claude Sonnet 4.5  
   - DeepSeek  
@@ -47,13 +47,13 @@ Before running mAIstro for the first time, make sure the Microsoft C++ Build Too
 ## 📦 Installation & Launch
 
 1. **Download** the ZIP file:  
-   👉 [Download mAIstro Desktop for Windows](<https://drive.google.com/file/d/1wd4is1-EA21V5SFyz9RuGhs4r31w9hQI/view?usp=sharing>)
+   👉 [Download mAIstro Desktop for Windows](<https://drive.google.com/file/d/1wSDCOX3UolCn0iOae36KHYke0A0rEFZc/view?usp=drive_link>)
 
 2. **Unzip** the file anywhere on your computer (recommended: Desktop).  
 
 3. **Double-click** the file:  
    ```bash
-   launch_maistro_v1.0r.bat
+   launch_maistro_v1.0.1r.bat
    ```
 
 That’s it! 🎉  
