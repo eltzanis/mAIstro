@@ -103,3 +103,33 @@ With **mAIstro Desktop**, you can explore this ecosystem directly on your comput
 
 For support or feedback:  
 📧 [etzanis@uoc.gr]
+
+---
+
+## Data Sources
+
+The mAIstro Desktop Pack includes example experiments using publicly available open datasets containing CT and MRI scans, as well as clinical and tabular datasets. All datasets are distributed under their respective open licenses and remain the intellectual property of their original authors and institutions. The following datasets were used:
+
+Wasserthal, J., & Akinci D'Antonoli, T. (2025). TotalSegmentator MRI dataset: 616 MRI images with segmentations for 50 anatomical regions (2.0.0) [Data set]. Zenodo. https://doi.org/10.5281/zenodo.14710732
+
+Wasserthal, J. (2023). Dataset with segmentations of 117 important anatomical structures in 1228 CT images (2.0.1) [Data set]. Zenodo. https://doi.org/10.5281/zenodo.10047292
+
+W. Wolberg, O. Mangasarian, N. Street, W. Street. Breast Cancer Wisconsin (Diagnostic) [Dataset]. UCI Machine Learning Repository (1993). https://doi.org/10.24432/C5DW2B
+
+Heart Failure Clinical Records [Dataset]. (2020). UCI Machine Learning Repository. https://doi.org/10.24432/C5Z89R
+
+J.W. Smith, J.E. Everhart, W.C. Dickson, W.C. Knowler, R.S. Johannes. Using the ADAP learning algorithm to forecast the onset of diabetes mellitus. Proc. Symp Comput. Appl. Med. Care (1988), pp. 261–265. https://www.kaggle.com/datasets/uciml/pima-indians-diabetes-database
+
+R. Detrano et al. International application of a new probability algorithm for the diagnosis of coronary artery disease. Am. J. Cardiol., 64(5), 304–310 (1989). https://archive.ics.uci.edu/dataset/45/heart+disease
+
+A. Kumar. Life Expectancy (WHO) Dataset. Kaggle (2017). https://www.kaggle.com/datasets/kumarajarshi/life-expectancy-who
+
+J. Yang, R. Shi, D. Wei, et al. MedMNIST v2 – a large-scale lightweight benchmark for 2D and 3D biomedical image classification. Sci. Data, 10 (2023), 41. https://doi.org/10.1038/s41597-022-01721-8
+
+Baid, U., Raza, S.E.A., Saha, A., et al. (2021). The RSNA-ASNR-MICCAI BraTS 2021 Benchmark on Brain Tumor Segmentation and Radiogenomic Classification. arXiv preprint arXiv:2107.02314. https://arxiv.org/abs/2107.02314
+
+Myronenko, A., et al. (2023). Automated 3D Segmentation of Kidneys and Tumors in MICCAI KiTS 2023 Challenge. arXiv preprint arXiv:2310.04110. https://doi.org/10.48550/arXiv.2310.04110
+
+Note:
+The datasets above are redistributed solely for educational and research demonstration purposes. Attribution to the original authors and datasets is maintained as required by their respective licenses.
+Users of the mAIstro Desktop Pack are responsible for ensuring compliance with each dataset’s license when using, modifying, or redistributing the data.
