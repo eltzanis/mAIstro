@@ -73,7 +73,7 @@ Subsequent launches will start instantly.
 
 - Avoid spaces in the path.  
 - Ensure at least **20 GB** of free disk space.  
-- Internet connection is required during the first setup.  
+- Internet connection is required for the API calls to the LLMs.  
 - You can switch between LLMs anytime by updating your API key in the app’s settings.  
 
 ---
