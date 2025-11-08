@@ -56,7 +56,7 @@ Before running mAIstro for the first time, make sure the Microsoft C++ Build Too
 
 4. **Double-click** the file:  
    ```bash
-   launch_maistro_v1.0.1r.bat
+   launch_maistro_v1.0.3r.bat
    ```
 
 That’s it! 🎉  
