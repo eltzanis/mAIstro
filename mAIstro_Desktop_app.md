@@ -67,11 +67,27 @@ The system will automatically:
 - Launch the **mAIstro Desktop App**
 
 ⚠️ **Note:**  
-The **first launch** may take up to **15 minutes**, as dependencies are installed.  
+The **first launch** may take up to **15-20 minutes**, as dependencies are installed.  
 Subsequent launches will start instantly.
 
 ---
 
+## 🔑 Create Your API Key (Required)
+
+To enable reasoning and conversation with mAIstro, each user needs to create an **API key** for their preferred **LLM (Large Language Model)**. 
+
+### Supported LLM Providers
+
+| Provider | Link to Create API Key | Notes |
+|-----------|------------------------|--------|
+| **OpenAI (GPT-4.1 / GPT-4.0)** | [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys) | ✅ *Recommended* - extensively tested with mAIstro |
+| **Anthropic (Claude Sonnet 4.5)** | [https://console.anthropic.com/account/keys](https://console.anthropic.com/account/keys) |  |
+| **DeepSeek** | [https://platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys) |  |
+
+💡 *Tip:*  
+Keep your API key private - never share it publicly.  
+
+---
 ## 💡 Tips
 
 - Avoid spaces in the path.  
