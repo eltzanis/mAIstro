@@ -84,8 +84,7 @@ To enable reasoning and conversation with mAIstro, each user needs to create an 
 | **Anthropic (Claude Sonnet 4.5)** | [https://console.anthropic.com/account/keys](https://console.anthropic.com/account/keys) |  |
 | **DeepSeek** | [https://platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys) |  |
 
-💡 *Tip:*  
-Keep your API key private - never share it publicly.  
+⚠️ **Keep your API key private - never share it publicly.**  
 
 ---
 ## 💡 Tips
