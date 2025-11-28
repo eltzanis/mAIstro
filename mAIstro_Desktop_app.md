@@ -47,7 +47,7 @@ Before running mAIstro for the first time, make sure the Microsoft C++ Build Too
 ## 📦 Installation & Launch
 
 1. **Download** the ZIP file:  
-   👉 [Download mAIstro Desktop for Windows](<https://drive.google.com/file/d/1c9v7wjvdhNv9L6CFV_OEwELbyY7u3Gx2/view?usp=drive_link>)
+   👉 [Download mAIstro Desktop for Windows](<https://drive.google.com/file/d/1L1rT4GhrKtQBaPWVtlaZ0mqCgflc3I1V/view?usp=drive_link>)
 
    🆕 **Version:** `v1.0.3r` — *released on 8/11/2025*  
    ✨ Includes enhanced capabilities and performance improvements.
