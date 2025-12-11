@@ -100,7 +100,7 @@ To enable reasoning and conversation with mAIstro, each user needs to create an 
 
 | Component | Requirement |
 |------------|--------------|
-| **OS** | Windows 10 or 11 (64-bit) |
+| **OS** | Windows 10 or 11 |
 | **RAM** | 16 GB (minimum recommended) |
 | **GPU** | NVIDIA GPU with CUDA 12.x (optional but recommended) |
 | **Storage** | 20 GB free space |
