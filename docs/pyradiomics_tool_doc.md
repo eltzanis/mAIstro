@@ -138,7 +138,6 @@ This will extract radiomics features and incorporate survival data from the clin
 - **Gradient**: Gradient filter
 - **SquareRoot**: Square root filter
 - **LBP2D**: Local Binary Pattern (2D)
-- **LBP3D**: Local Binary Pattern (3D)
 
 ## Available Feature Classes
 
