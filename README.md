@@ -35,6 +35,9 @@ Built around a team of specialized agents, mAIstro enables researchers and clini
 
 Experience the power of mAIstro - your intelligent desktop assistant for building complete AI pipelines in medical imaging.
 
+✨ Includes enhanced capabilities and performance improvements.
+🧠 The latest versions of mAIstro tools are embedded in the mAIstro Desktop App.
+
 From radiomic feature extraction to the development, evaluation, and deployment of segmentation, classification, and regression AI models, everything happens right on your desktop by simply chatting with mAIstro.
 
 👉 [Learn more and get download & installation instructions](./mAIstro_Desktop_app.md)
