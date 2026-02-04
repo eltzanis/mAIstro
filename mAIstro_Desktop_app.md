@@ -1,9 +1,13 @@
-# 🤖 mAIstro Desktop App (Windows)
+# 🤖 mAIstro Desktop App (Windows & Linux)
 
 **mAIstro Desktop** is the easiest way to experience the **mAIstro AI framework** - directly from your desktop.  
 It lets you build complete **AI pipelines for medical imaging** without any manual setup or coding.
 
 From **radiomic feature extraction** to **segmentation**, **classification**, **regression**, **evaluation**, and **deployment**, everything happens through an intuitive chat interface where you simply **talk with mAIstro** to create, run, and manage your workflows.
+
+🪟 **Windows 10/11**
+
+🐧 **Linux (tested on Ubuntu & Pop!_OS / Debian-based)**
 
 ---
 
@@ -13,51 +17,79 @@ From **radiomic feature extraction** to **segmentation**, **classification**, **
 - 🧩 **End-to-end automation:** Perform **radiomic feature extraction**, **segmentation**, **classification**, **regression**, and **AI model development** in one place.  
 - 🧠 **Choose your reasoning engine:** Select between multiple **Large Language Models (LLMs)** as mAIstro’s core engine:
   - GPT-4.1 **(Recommended)** 
-  - GPT-4.0  
+  - GPT-5.2  
   - Claude Sonnet 4.5  
   - DeepSeek  
 - 🔑 Just import your **API key** for your preferred LLM - no manual configuration needed.  
 - ⚙️ **Automatic setup:** The system installs **Miniconda**, creates the `maistro` environment, and installs all dependencies automatically.  
 - 🖥️ **GPU-ready** for accelerated workflows.  
-- 🪟 Works out of the box on **Windows 10/11**.
+
 
 ---
 
-## 🧰 Prerequisite: Install the Required Compiler
+## 🧰 Prerequisites
 
-Before running mAIstro for the first time, make sure the Microsoft C++ Build Tools are installed on your system.
+### 🪟 Windows
 
-1. Go to the official Microsoft page:
-    👉 https://visualstudio.microsoft.com/visual-cpp-build-tools/
+Before running mAIstro for the first time, install the Microsoft C++ Build Tools:
 
-2. Download Build Tools for Visual Studio.
-
-3. During installation, select:
-
-    ✅ “Desktop development with C++”
-
-    Under Optional components, make sure these are checked:
-
-     - MSVC v143 (or newer)
-
-     - Windows 10/11 SDK
+1. https://visualstudio.microsoft.com/visual-cpp-build-tools/
+2. Download **Build Tools for Visual Studio**
+3. Select:
+   - ✅ *Desktop development with C++*
 
 ---
 
-## 📦 Installation & Launch
+### 🐧 Linux (Ubuntu / Pop!_OS / Debian-based)
+
+Install required system packages:
+
+```bash
+sudo apt update
+sudo apt install -y build-essential curl
+```
+---
+
+## 📦 Installation & Launch (Windows)
 
 1. **Download** the ZIP file:  
-   👉 [Download mAIstro Desktop for Windows](<https://drive.google.com/file/d/1JEu-mol2mqKx1NKNJY1icQMudAT0Kkw9/view?usp=sharing>)
+   👉 [Download mAIstro Desktop for Windows](https://drive.google.com/file/d/1JEu-mol2mqKx1NKNJY1icQMudAT0Kkw9/view?usp=sharing)
 
-   🆕 **Version:** `v1.0.4r` - *released on 04/02/2026*  
-   ✨ Includes enhanced capabilities and performance improvements.
-    
-3. **Unzip** the file anywhere on your computer (recommended: Desktop).  
+   🆕 **Version:** `v1.0.4r` — *released on 04/02/2026*  
+   ✨ Enhanced capabilities and performance improvements.
 
-4. **Double-click** the file:  
-   ```bash
+2. **Unzip** the file anywhere on your computer  
+   *(recommended: Desktop)*
+
+3. **Launch** the application:
+   ```bat
    launch_maistro_v1.0.4r.bat
-   ```
+⚠️ Important Warning:
+If you have a previous version of mAIstro installed, first delete the miniconda folder in that version’s directory before installing the new version.
+Otherwise, the launcher may detect the already installed environment with the same name and fail to initiate because it won’t be in the appropriate directory.
+
+
+## 📦 Installation & Launch (Linux)
+
+🐧 **Tested on:** Ubuntu & Pop!_OS (Debian-based)
+
+1. **Download** the ZIP file:  
+   👉 [Download mAIstro Desktop for Windows](https://drive.google.com/file/d/1kf17eraqwIH9Zwpzn2VIQuiRuVyVUXSL/view?usp=sharing)
+
+   🆕 **Version:** `v1.0.4r` — *released on 04/02/2026*  
+   ✨ Enhanced capabilities and performance improvements.
+
+2. **Unzip** the file anywhere on your computer  
+   *(recommended: Desktop)*
+
+3. Make the launcher executable:
+   ```bat
+   chmod +x launch_maistro_v1.0.4r.sh
+
+4. Launch the application:
+   ```bat
+   ./launch_maistro_v1.0.4r.sh
+
 
 That’s it! 🎉  
 The system will automatically:
@@ -80,7 +112,7 @@ To enable reasoning and conversation with mAIstro, each user needs to create an 
 
 | Provider | Link to Create API Key | Notes |
 |-----------|------------------------|--------|
-| **OpenAI (GPT-4.1 / GPT-4.0)** | [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys) | ✅ *Recommended* - extensively tested with mAIstro |
+| **OpenAI (GPT-4.1 / GPT-5.2)** | [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys) | ✅ *Recommendation: GPT-4.1* - extensively tested with mAIstro |
 | **Anthropic (Claude Sonnet 4.5)** | [https://console.anthropic.com/account/keys](https://console.anthropic.com/account/keys) |  |
 | **DeepSeek** | [https://platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys) |  |
 
