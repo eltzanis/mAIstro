@@ -33,7 +33,7 @@ Built around a team of specialized agents, mAIstro enables researchers and clini
 
 ## 🎉 mAIstro Desktop App is Here!
 
-🚀 **v1.0.4r released** (04/02/2026) - mAIstro Desktop now available on **Windows and Linux**
+🚀 **v1.0.4r released** (04/02/2026) - mAIstro Desktop now available on **Windows and Linux**.
 
 
 
