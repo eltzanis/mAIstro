@@ -55,7 +55,7 @@ sudo apt install -y build-essential curl
 1. **Download** the ZIP file:  
    👉 [Download mAIstro Desktop for Windows](https://drive.google.com/file/d/1JEu-mol2mqKx1NKNJY1icQMudAT0Kkw9/view?usp=sharing)
 
-   🆕 **Version:** `v1.0.4r` — *released on 04/02/2026*  
+   🆕 **Version:** `v1.0.4r` - *released on 04/02/2026*  
    ✨ Enhanced capabilities and performance improvements.
 
 2. **Unzip** the file anywhere on your computer  
@@ -76,7 +76,7 @@ Otherwise, the launcher may detect the already installed environment with the sa
 1. **Download** the ZIP file:  
    👉 [Download mAIstro Desktop for Linux](https://drive.google.com/file/d/1kf17eraqwIH9Zwpzn2VIQuiRuVyVUXSL/view?usp=sharing)
 
-   🆕 **Version:** `v1.0.4r` — *released on 04/02/2026*  
+   🆕 **Version:** `v1.0.4r` - *released on 04/02/2026*  
    ✨ Enhanced capabilities and performance improvements.
 
 2. **Unzip** the file anywhere on your computer  
@@ -89,7 +89,6 @@ Otherwise, the launcher may detect the already installed environment with the sa
 4. Launch the application:
    ```bat
    ./launch_maistro_v1.0.4r.sh
-
 
 That’s it! 🎉  
 The system will automatically:
