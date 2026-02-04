@@ -74,7 +74,7 @@ Otherwise, the launcher may detect the already installed environment with the sa
 🐧 **Tested on:** Ubuntu & Pop!_OS (Debian-based)
 
 1. **Download** the ZIP file:  
-   👉 [Download mAIstro Desktop for Windows](https://drive.google.com/file/d/1kf17eraqwIH9Zwpzn2VIQuiRuVyVUXSL/view?usp=sharing)
+   👉 [Download mAIstro Desktop for Linux](https://drive.google.com/file/d/1kf17eraqwIH9Zwpzn2VIQuiRuVyVUXSL/view?usp=sharing)
 
    🆕 **Version:** `v1.0.4r` — *released on 04/02/2026*  
    ✨ Enhanced capabilities and performance improvements.
