@@ -48,6 +48,7 @@ From radiomic feature extraction to the development, evaluation, and deployment 
 👉 [Learn more and get download & installation instructions](./mAIstro_Desktop_app.md)
 
 
+
 <p align="center">
   <img src="mAIstro_desktop_app.png" alt="mAIstro Logo" width="1200"/>
 </p>
