@@ -49,7 +49,7 @@ Before running mAIstro for the first time, make sure the Microsoft C++ Build Too
 1. **Download** the ZIP file:  
    👉 [Download mAIstro Desktop for Windows](<https://drive.google.com/file/d/1JEu-mol2mqKx1NKNJY1icQMudAT0Kkw9/view?usp=sharing>)
 
-   🆕 **Version:** `v1.0.4r` — *released on 04/02/2026*  
+   🆕 **Version:** `v1.0.4r` - *released on 04/02/2026*  
    ✨ Includes enhanced capabilities and performance improvements.
     
 3. **Unzip** the file anywhere on your computer (recommended: Desktop).  
