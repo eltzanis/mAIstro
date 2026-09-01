@@ -50,7 +50,7 @@ You can then select which capabilities you want to expose to the agent and start
 https://github.com/eltzanis/ReCo
 
 
-
+---
 
 
 ## mAIstro Desktop App 
