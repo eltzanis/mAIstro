@@ -31,7 +31,29 @@ Built around a team of specialized agents, mAIstro enables researchers and clini
 
 ---
 
-## 🎉 mAIstro Desktop App is Here!
+## 📢 Major Update: The Easiest Way to Use mAIstro Is Now Through ReCo!
+
+The easiest way to access and work with the **latest and most up-to-date capabilities of mAIstro** is now through **ReCo (Research Cosmos)**, our self-configuring and self-extending agentic application for biomedical research.
+
+ReCo bundles mAIstro's capabilities and exposes them to the ReCo agent through dedicated **Model Context Protocol (MCP) servers**.
+
+### Just download ReCo and ask:
+
+> **"This is the first launch of the app, set it up."**
+
+That's it! ReCo will automatically set up the required **Conda environments, install the necessary dependencies, and configure the MCP servers** that provide mAIstro's capabilities.
+
+You can then select which capabilities you want to expose to the agent and start working with ReCo — from **data preprocessing and statistical analysis to radiomics, classification, regression, medical image segmentation, model development, evaluation, deployment, and more.**
+
+
+👉 **Download ReCo:**
+https://github.com/eltzanis/ReCo
+
+
+
+
+
+## mAIstro Desktop App 
 
 🚀 **v1.0.4r released** (04/02/2026) - mAIstro Desktop now available on **Windows and Linux**.
 
